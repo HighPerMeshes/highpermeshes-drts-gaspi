@@ -1,0 +1,17 @@
+get_filename_component(HighPerMeshesDRTS_CMAKE_DIR "${CMAKE_CURRENT_LIST_FILE}" PATH)
+include(CMakeFindDependencyMacro)
+
+list(APPEND CMAKE_MODULE_PATH ${HighPerMeshesDRTS_CMAKE_DIR})
+
+# Propagates the needed dependencies to the user of our library
+find_dependency(ACE REQUIRED)
+find_dependency(GaspiCxx REQUIRED)
+find_dependency(HighPerMeshes REQUIRED)
+
+list(REMOVE_AT CMAKE_MODULE_PATH -1)
+
+if(NOT TARGET HighPerMeshesDRTS::HighPerMeshesDRTS)
+    include("${HighPerMeshesDRTS_CMAKE_DIR}/HighPerMeshesDRTSTargets.cmake")
+endif()
+
+set(HighPerMeshesDRTS_LIBRARIES HighPerMeshesDRTS::HighPerMeshesDRTS)

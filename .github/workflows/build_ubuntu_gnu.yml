@@ -1,0 +1,80 @@
+name: HighPerMeshesDrts
+
+on: [push]
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v1
+
+    - name: install gcc-8
+      working-directory: ./CI/github
+      run: chmod +x ./install_gcc8.sh && ./install_gcc8.sh
+    - name: install google test suite
+      working-directory: ./CI/github
+      run: chmod +x ./install_googletest.sh && ./install_googletest.sh
+    - name: install metis
+      working-directory: ./CI/github
+      run: chmod +x ./install_metis.sh && ./install_metis.sh
+    - name: install opencl
+      working-directory: ./CI/github
+      run: chmod +x ./install_opencl.sh && ./install_opencl.sh
+    - name: install libnuma
+      working-directory: ./CI/github
+      run: chmod +x ./install_libnuma.sh && ./install_libnuma.sh
+
+    - name: create build directory
+      run: mkdir -p build
+
+    - name: install GPI2 (ethernet)
+      working-directory: ./build
+      run: >-
+        git clone https://github.com/cc-hpc-itwm/GPI-2.git &&
+        cd GPI-2 &&
+        ./autogen.sh &&
+        ./configure --with-ethernet --prefix=`pwd`/../GPI-2-ethernet &&
+        make && make install
+
+    - name: install GaspiCxx
+      working-directory: ./build
+      run: >-
+        export PATH=$PATH:`pwd`/GPI-2-ethernet/bin &&
+        export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:`pwd`/GPI-2-ethernet/lib64/pkgconfig &&
+        git clone https://github.com/cc-hpc-itwm/GaspiCxx.git &&
+        cd GaspiCxx &&
+        mkdir build && cd build &&
+        cmake .. && make &&
+        cd .. &&
+        mkdir lib && cp build/src/libGaspiCxx.a lib
+
+    - name: install ACE
+      working-directory: ./build
+      run: >-
+        export PATH=$PATH:`pwd`/GPI-2-ethernet/bin &&
+        export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:`pwd`/GPI-2-ethernet/lib64/pkgconfig &&
+        git clone https://github.com/cc-hpc-itwm/ACE.git &&
+        cd ACE && git checkout device &&
+        mkdir build && cd build &&
+        cmake .. && make &&
+        cd .. &&
+        mkdir lib && cp build/src/libACE.a lib
+
+    - name: build highpermeshes-dsl
+      run: >-
+        cd .. && 
+        git clone https://github.com/HighPerMeshes/highpermeshes-dsl.git &&
+        cd highpermeshes-dsl &&
+        mkdir build && cd build &&
+        cmake .. && make
+
+    - name: build highpermeshes-drts-gaspi
+      working-directory: ./build
+      run: >-
+        export PATH=$PATH:`pwd`/GPI-2-ethernet/bin &&
+        export PKG_CONFIG_PATH=$PKG_CONFIG_PATH:`pwd`/GPI-2-ethernet/lib64/pkgconfig &&
+        ace_dep="-DACE_INCLUDE_DIR=ACE/include -DACE_LIBRARY=ACE/lib/libACE.a" &&
+        gaspi_dep="-DGaspiCxx_INCLUDE_DIR=GaspiCxx/include -DGaspiCxx_LIBRARY=GaspiCxx/lib/libGaspiCxx.a" &&
+        cmake $ace_dep $gaspi_dep .. && make
