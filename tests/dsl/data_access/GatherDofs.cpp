@@ -171,7 +171,7 @@ TEST_F(GlobalBufferTest_3d, Pointers)
         HPM::ForEachEntity(
         AllCells,
         std::tuple(Write(Cell(buffer)), Write(Global(buffer))),
-        [&](const auto& cell, auto&&, auto& lvs) {
+        [&](const auto&, auto&&, auto& lvs) {
             auto& cell_dofs = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
             cell_dofs[0] = 1 + id;
 
