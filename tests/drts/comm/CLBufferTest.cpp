@@ -75,8 +75,8 @@ namespace HPM::drts::comm
         const size_t offset{getOffset(myRank)};
 
         MeshWith10Elements mesh;
-        Dofs<0, 1> dofs;
-        std::unique_ptr<Buffer<int, MeshWith10Elements, Dofs<0, 1>, ace::device::Allocator<int>>> buffer;
+        Dofs<0, 1, 0> dofs;
+        std::unique_ptr<Buffer<int, MeshWith10Elements, Dofs<0, 1, 0>, ace::device::Allocator<int>>> buffer;
 
         cl::Kernel kernel;
 
@@ -104,7 +104,7 @@ namespace HPM::drts::comm
                 }
             }
 
-            buffer = std::make_unique<Buffer<int, MeshWith10Elements, Dofs<0, 1>, ace::device::Allocator<int>>>(mesh, dofs, device.allocator<int>());
+            buffer = std::make_unique<Buffer<int, MeshWith10Elements, Dofs<0, 1, 0>, ace::device::Allocator<int>>>(mesh, dofs, device.allocator<int>());
 
             // kernel sets element at index i to i
             std::string kernel_code = "void kernel init(global int* input, int offset){"

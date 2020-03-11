@@ -20,7 +20,7 @@
 #include <random>
 
 using namespace HPM;
-constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 1>();
+constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 1, 0>();
 
 struct DistributedBufferTest : public ::testing::Test
 {

@@ -57,27 +57,6 @@ int main(int argc, char **argv)
     HPM::auxiliary::GambitMeshFileReader<CoordinateType, std::array<std::size_t, 4>> reader;
     const Mesh mesh = Mesh::template CreateFromFile(meshFile, reader, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get(), partitioner);
 
-#if defined(TEST)
-    constexpr auto Dofs_1 = ::HPM::dof::MakeDofs(4, 7, 3, 3);
-    auto field_1(hpm.GetBuffer<CoordinateType>(mesh, Dofs_1));
-
-    //constexpr auto Dofs_2 = ::HPM::dof::MakeDofs<0, 7, 0, 1>();
-    //constexpr auto Dofs_2 = ::HPM::dof::MakeDofs<0, 0, 0, 20>();
-    constexpr auto Dofs_2 = ::HPM::dof::MakeDofs(0, 0, 0, 20);
-    auto field_2(hpm.GetBuffer<CoordinateType>(mesh, Dofs_2));
-
-    auto AllCells { mesh.GetEntityRange<Mesh::CellDimension>([] (const auto& entity) { return (entity.GetTopology().GetIndex() < 2 || entity.GetTopology().GetIndex() == 1051); }) } ;    
-
-    HPM::DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
-    body.Execute(
-        HPM::ForEachEntity(
-        AllCells,
-        std::tuple(ReadWrite(All(field_1)), ReadWrite(Cell(field_2))),
-        [&](const auto &cell, auto&, auto& lvs) {
-            
-        })
-    );
-#else
     /** \brief read application-dependent discontinuous Galerkin's stuff */
     constexpr std::size_t order = 3;
     using DG = DgNodes<RealType, Vec3D, order>;
@@ -90,8 +69,8 @@ int main(int argc, char **argv)
     //    All three kernels (Maxwell's Surface Kernel, Maxwell's Volume Kernel, Runge-Kutta kernel)         //
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
     /** \brief load initial conditions for fields */
-    constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 0, DG::numVolNodes>();
-    //auto Dofs = ::HPM::dof::MakeDofs(0, 0, 0, (argc > 1 ? std::atoi(argv[1]) : 20));
+    constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 0, DG::numVolNodes, 1>();
+    //auto Dofs = ::HPM::dof::MakeDofs(0, 0, 0, (argc > 1 ? std::atoi(argv[1]) : 20), 0);
 
 
     using Iterator = ::HPM::iterator::Iterator<std::size_t>;
@@ -307,7 +286,7 @@ int main(int argc, char **argv)
               << ", " << maxEy
               << " ] with max nodal error " << maxErrorEy
               << std::endl;
-#endif
+
     //////////////////////////////////////////////////////////////////////////////////////////////////////////
     //                         Shutdown of the runtime system                                               //
     //////////////////////////////////////////////////////////////////////////////////////////////////////////

@@ -26,8 +26,8 @@ using Mat3D = HPM::dataType::Mat3D;
 using namespace HPM;
 using namespace HPM::internal;
 
-constexpr size_t Repetitions = 1;
-constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 0, 1>();
+[[maybe_unused]] constexpr size_t Repetitions = 1;
+constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 0, 1, 0>();
 
 int main(int argc, char **argv)
 {

@@ -26,7 +26,7 @@ using namespace HPM;
 using namespace HPM::internal;
 
 constexpr size_t NumBuffers = 3;
-constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 0, 10>();
+constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 0, 10, 0>();
 constexpr size_t Repetitions = 2;
 
 template<typename Op, size_t... Is>
@@ -81,7 +81,7 @@ int main(int argc, char **argv)
       HPM::ForEachEntity(
         AllCells,
         WritePatterns,
-        [](const auto& entity, const auto time_step, auto& lvs) {
+        [](const auto&, const auto, auto& lvs) {
             
             HPM::auxiliary::TransformTuple(
                 lvs,
@@ -99,7 +99,7 @@ int main(int argc, char **argv)
       HPM::ForEachEntity(
         AllCells,
         ReadWritePatterns,
-        [](const auto& entity, const auto time_step, auto& lvs) {
+        [](const auto&, const auto, auto& lvs) {
 
             HPM::auxiliary::TransformTuple(
                 lvs,
@@ -116,7 +116,7 @@ int main(int argc, char **argv)
       HPM::ForEachEntity(
         AllCells,
         ReadPatterns,
-        [](const auto& entity, const auto time_step, auto& lvs) {
+        [](const auto&, const auto, auto& lvs) {
 
             HPM::auxiliary::TransformTuple(
                 lvs,
@@ -124,7 +124,7 @@ int main(int argc, char **argv)
 
                   const auto field = dof::GetDofs<dof::Name::Cell>(local_view);
                   HPM::ForEach(10, [&](auto i){
-                    auto x = field[i];
+                    [[maybe_unused]] auto x = field[i];
                   });
                 }
             );
