@@ -28,7 +28,7 @@ struct DistributedDispatcherTest : public ::testing::Test
 
     GetDistributedBuffer<> bufferHandler;
     UsingDevice device;
-    const Grid grid{10, 10};
+    const Grid<2> grid{10, 10};
 
     const Mesh mesh;
 
@@ -37,8 +37,8 @@ struct DistributedDispatcherTest : public ::testing::Test
     DistributedDispatcherTest()
         : mesh{[& grid = this->grid, &gaspi = GaspiSingleton::instance(), &device = this->device]() {
               auto nodes{grid.nodes};
-              auto simplexes{grid.simplexes};
-              return Mesh{std::move(nodes), std::move(simplexes), std::pair{gaspi.GetL1PartitionNumber(), device.GetL2PartitionNumber()}, gaspi.gaspi_runtime.rank().get(), Partitioner{}};
+              auto simplices{grid.simplices};
+              return Mesh{std::move(nodes), std::move(simplices), std::pair{gaspi.GetL1PartitionNumber(), device.GetL2PartitionNumber()}, gaspi.gaspi_runtime.rank().get(), Partitioner{}};
           }()}
     {
     }

@@ -1,6 +1,7 @@
 find_package(GTest REQUIRED)
 
 add_executable( tests
+    dsl/data_access/GatherDofs.cpp
     drts/Task.cpp
     drts/comm/BufferTest.cpp 
     drts/comm/CLBufferTest.cpp
