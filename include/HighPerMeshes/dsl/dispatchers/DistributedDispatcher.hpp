@@ -209,6 +209,12 @@ namespace HPM
                         std::vector<std::size_t> dofs;
                         const auto& access_to_entity = dependency_map.L2PHasAccessToL2PByEntity(requested_L2, producing_L2);
 
+                        // Global dofs.
+                        {
+                            const auto& indices = dependency.edge->template GetDofIndices<MeshT::CellDimension + 1>();
+                            dofs.insert(dofs.end(), indices.begin(), indices.end());
+                        }
+
                         ConstexprFor<0, MeshT::CellDimension>([&access_to_entity, &dofs, &dependency](const auto Codimension) {
                             constexpr std::size_t Dimension = MeshT::CellDimension - Codimension;
 

@@ -21,7 +21,7 @@ using Mesh = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>;
 
 using Partitioner = HPM::mesh::MetisPartitioner;
 
-constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 1>();
+constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 1, 0>();
 
 struct DistributedDispatcherTest : public ::testing::Test
 {
