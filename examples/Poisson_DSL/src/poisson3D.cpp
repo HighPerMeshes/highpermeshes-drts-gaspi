@@ -105,14 +105,14 @@ int main(int argc, char** argv)
     Pair materialsPerCellId; CreateMaterialTuple(mesh, materialsPerCell, materialsPerCellId, true);
 
     /*------------------------------------------(2) Create right-hand side (rhs) and global stiffness matrix (GSM) --------------------------------------------*/
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> rhs(mesh);
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rhs(mesh);
     SetRHS(mesh, rhs, true, body);
 
     /**
       * - initialisations of local matrices (as buffer) and global stiffness matrix (no buffer)
       * - compute local matrices (per cell) and assemble global stiffness matrix (for the whole mesh)
     **/
-    HPM::Buffer<float, Mesh, Dofs<4, 0, 0, 0>> localMatrices(mesh);
+    HPM::Buffer<float, Mesh, Dofs<4, 0, 0, 0, 0>> localMatrices(mesh);
     Matrix GSM; GSM.resize(mesh.template GetNumEntities<0>(), Vector(mesh.template GetNumEntities<0>()));
     SetGSM(mesh, localMatrices, GSM, true, body, materialsPerCellId);
 
