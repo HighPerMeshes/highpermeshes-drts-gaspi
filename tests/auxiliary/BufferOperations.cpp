@@ -11,29 +11,29 @@
 
 #include <HighPerMeshes.hpp>
 #include <HighPerMeshesDRTS.hpp>
+#include <HighPerMeshes/auxiliary/Atomic.hpp>
+#include <HighPerMeshes/auxiliary/BufferOperations.hpp>
+#include <HighPerMeshes/auxiliary/ConstexprFor.hpp>
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 
-#include "../../util/GaspiSingleton.hpp"
-#include "../../util/Grid.hpp"
+#include "../util/GaspiSingleton.hpp"
+#include "../util/Grid.hpp"
 
 using Partitioner = ::HPM::mesh::MetisPartitioner;
 
-template <typename T>
-class DEBUG;
-
 template <std::size_t Dimension>
-class GlobalDofTest : public ::testing::Test
+class BufferOperationsTest : public ::testing::Test
 {
     auto GridExtent()
         -> std::array<std::size_t, Dimension>
     {
         if constexpr (Dimension == 2)
         {
-            return {2, 2};
+            return {32, 16};
         }
         else if constexpr (Dimension == 3)
         {
-            return {4, 2, 2};
+            return {8, 8, 8};
         }
 
         return {};
@@ -43,21 +43,27 @@ public:
     using CoordinateT = typename Grid<Dimension>::CoordinateT;
     using MeshT = ::HPM::mesh::PartitionedMesh<CoordinateT, ::HPM::entity::Simplex, Dimension>;
 
-    GlobalDofTest()
+    BufferOperationsTest()
         :
         gaspi(GaspiSingleton::instance()),
         dispatcher(gaspi.gaspi_context, gaspi.gaspi_segment, device),
-        process_id(gaspi.gaspi_runtime.rank().get()),
+        proc_id(gaspi.gaspi_context.rank().get()),
+        num_procs(gaspi.gaspi_context.size().get()),
         grid(GridExtent()),
         mesh(std::vector<CoordinateT>(grid.nodes), 
              std::vector<std::array<std::size_t, Dimension + 1>>(grid.simplices),
              std::pair{gaspi.GetL1PartitionNumber(), device.GetL2PartitionNumber()}, 
-             process_id, Partitioner{})
-    {}
+             proc_id, Partitioner{})
+    {
+    }
 
-    ~GlobalDofTest() {}
+    ~BufferOperationsTest() {}
 
-    auto GetProcessId() const { return process_id; }
+    auto GetProcessId() const { return proc_id; }
+
+    auto GetNumProcesses() const { return num_procs; }
+
+    auto& GetGaspiInstance() { return gaspi; }
 
     const auto& GetMesh() const { return mesh; }
 
@@ -71,180 +77,371 @@ protected:
     ::HPM::UsingDevice device;
     ::HPM::UsingGaspi& gaspi;
     ::HPM::DistributedDispatcher dispatcher;
-    const std::size_t process_id;
+    const std::size_t proc_id;
+    const std::size_t num_procs;
     const Grid<Dimension> grid;
     MeshT mesh;
 };
 
-template <std::size_t Dimension, typename EntityT>
-auto GetSmallestSubEntityIndex(const EntityT& entity)
-{
-    static_assert(Dimension <= EntityT::Dimension, "error: entity dimension must be larger than sub-entity dimension.");
+using GlobalBufferTest_2d = BufferOperationsTest<2>;
+using GlobalBufferTest_3d = BufferOperationsTest<3>;
 
-    std::pair<std::size_t, std::size_t> index{EntityT::MeshT::InvalidIndex, 0};
-
-    for (const auto& sub_entity : entity.GetTopology().template GetEntities<Dimension>())
-    {
-        const std::size_t sub_entity_index = sub_entity.GetTopology().GetIndex();
-
-        if (sub_entity_index < index.first)
-        {
-            index.first = sub_entity_index;
-            index.second = sub_entity.GetTopology().GetLocalIndex();
-        }
-    }
-
-    return index;
-}
-
-
-//using GlobalBufferTest_2d = GlobalDofTest<2>;
-using GlobalBufferTest_3d = GlobalDofTest<3>;
-/*
-TEST_F(GlobalBufferTest_2d, Pointers)
-{
-    using namespace ::HPM;
-
-    drts::Runtime hpm{GetBuffer{}};
-    constexpr auto Dofs = dof::MakeDofs<4, 2, 3, 7>();
-    const auto& mesh = GetMesh();
-    auto field{hpm.GetBuffer<CoordinateT>(mesh, Dofs)}; 
-
-    SequentialDispatcher body;
-    auto AllCells{mesh.GetEntityRange<2>()};
-    std::array<std::ptrdiff_t, 3> offset;
-    std::array<std::size_t, 3> expected_offset;
-
-    expected_offset[2] = 7;
-    expected_offset[1] = expected_offset[2] + Dofs.template At<2>() * mesh.template GetNumEntities<2>();
-    expected_offset[0] = expected_offset[1] + Dofs.template At<1>() * mesh.template GetNumEntities<1>();
-
-    body.Execute(
-        ForEachEntity(
-        AllCells,
-        std::tuple(Read(Node(field)), Read(Edge(field)), Read(Cell(field)), Write(Global(field))),
-        [&] (const auto& cell, auto&&, auto lvs)
-        {
-            const auto& field_node = dof::GetDofs<dof::Name::Node>(std::get<0>(lvs));
-            const auto& field_edge = dof::GetDofs<dof::Name::Edge>(std::get<1>(lvs));
-            const auto& field_cell = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
-            auto& field_global = dof::GetDofs<dof::Name::Global>(std::get<3>(lvs));
-
-            const auto& node_id = GetSmallestSubEntityIndex<0>(cell);
-            const auto& edge_id = GetSmallestSubEntityIndex<1>(cell);
-            const std::size_t cell_id = cell.GetTopology().GetIndex();
-
-            field_global[cell_id][0] = 1 + cell_id;
-
-            if (node_id.first == 0) offset[0] = &field_node[node_id.second][0] - &field_global[0];
-            if (edge_id.first == 0) offset[1] = &field_edge[edge_id.second][0] - &field_global[0];
-            if (cell_id == 0) offset[2] = &field_cell[0] - &field_global[0];
-        })
-    );
-
-    EXPECT_EQ(offset[0], expected_offset[0]);
-    EXPECT_EQ(offset[1], expected_offset[1]);
-    EXPECT_EQ(offset[2], expected_offset[2]);
-
-    const bool expected_assignment = [&field, &mesh] () 
-        { 
-            for (std::size_t i = 0; i < mesh.GetNumEntities(); ++i) 
-                if (field[i][0] != (1 + i)) return false;
-            return true; 
-        } ();
-    EXPECT_EQ(true, expected_assignment);
-}
-*/
-
-TEST_F(GlobalBufferTest_3d, Pointers)
+TEST_F(GlobalBufferTest_2d, AllReduce_GlobalDofs)
 {
     using namespace ::HPM;
 
     const auto& mesh = GetMesh();
-    constexpr auto Dofs = dof::MakeDofs<0, 0, 0, 2, 4>();
+    constexpr auto Dofs = dof::MakeDofs<1, 1, 3, 4>();
     auto buffer = GetBuffer<int>(Dofs);
     auto& body = GetDistributedDispatcher();
-    auto AllCells{mesh.GetEntityRange<3>()};
-    const std::size_t id = GetProcessId();
+    auto AllCells{mesh.GetEntityRange<2>()};
+    const std::size_t proc_id = GetProcessId();
+    const std::size_t num_procs = GetNumProcesses();
 
     body.Execute(
         HPM::ForEachEntity(
         AllCells,
-        std::tuple(Write(Cell(buffer)), Write(Global(buffer))),
+        std::tuple(Write(Global(buffer))),
         [&](const auto&, auto&&, auto& lvs) {
-            auto& cell_dofs = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-            cell_dofs[0] = 1 + id;
-
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<1>(lvs));
-            global_dofs[0] = -2 * static_cast<int>(1 + id);
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            global_dofs[0] = 3 * static_cast<int>(1 + proc_id);
+            global_dofs[3] = 12 * static_cast<int>(2 + proc_id);
         })
-    );
-
-    if (process_id == 0)
-    {
-        std::cout << "Number of cells: " << mesh.GetNumEntities() << std::endl;
-    }
+    );    
     
-    std::cout << "Process: " << process_id << ": ";
-    for (const auto& item : buffer)
+    const auto& global_dofs = ::HPM::auxiliary::AllReduce<3>(buffer, GetGaspiInstance(), 0, [] (const auto& aggregate, const auto& value) { return aggregate + value; });
+
+    std::vector<int> expected_global_dofs(4, 0);
+    for (std::size_t p = 0; p < num_procs; ++p)
     {
-        std::cout << item << ", ";
+        expected_global_dofs[0] += 3 * static_cast<int>(1 + p);
+        expected_global_dofs[3] += 12 * static_cast<int>(2 + p);
     }
-    std::cout << std::endl;
 
-/*
-    drts::Runtime hpm{GetBuffer{}};
-    constexpr auto Dofs = dof::MakeDofs<4, 2, 3, 7, 6>();
+    EXPECT_EQ(true, std::equal(global_dofs.begin(), global_dofs.end(), expected_global_dofs.begin()));
+}
+
+TEST_F(GlobalBufferTest_3d, AllReduce_GlobalDofs)
+{
+    using namespace ::HPM;
+
     const auto& mesh = GetMesh();
-    auto field{hpm.GetBuffer<CoordinateT>(mesh, Dofs)}; 
-
-    SequentialDispatcher body;
+    constexpr auto Dofs = dof::MakeDofs<1, 1, 3, 2, 4>();
+    auto buffer = GetBuffer<int>(Dofs);
+    auto& body = GetDistributedDispatcher();
     auto AllCells{mesh.GetEntityRange<3>()};
-    std::array<std::ptrdiff_t, 4> offset;
-    std::array<std::size_t, 4> expected_offset;
-
-    expected_offset[3] = 6;
-    expected_offset[2] = expected_offset[3] + Dofs.template At<3>() * mesh.template GetNumEntities<3>();
-    expected_offset[1] = expected_offset[2] + Dofs.template At<2>() * mesh.template GetNumEntities<2>();
-    expected_offset[0] = expected_offset[1] + Dofs.template At<1>() * mesh.template GetNumEntities<1>();
+    const std::size_t proc_id = GetProcessId();
+    const std::size_t num_procs = GetNumProcesses();
 
     body.Execute(
-        ForEachEntity(
+        HPM::ForEachEntity(
         AllCells,
-        std::tuple(Read(Node(field)), Read(Edge(field)), Read(Face(field)), Read(Cell(field)), Write(Global(field))),
-        [&] (const auto& cell, auto&&, auto lvs)
-        {
-            const auto& field_node = dof::GetDofs<dof::Name::Node>(std::get<0>(lvs));
-            const auto& field_edge = dof::GetDofs<dof::Name::Edge>(std::get<1>(lvs));
-            const auto& field_face = dof::GetDofs<dof::Name::Face>(std::get<2>(lvs));
-            const auto& field_cell = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
-            auto& field_global = dof::GetDofs<dof::Name::Global>(std::get<4>(lvs));
+        std::tuple(Write(Global(buffer))),
+        [&](const auto&, auto&&, auto& lvs) {
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            global_dofs[0] = 3 * static_cast<int>(1 + proc_id);
+            global_dofs[3] = 12 * static_cast<int>(2 + proc_id);
+        })
+    );    
+    
+    const auto& global_dofs = ::HPM::auxiliary::AllReduce<4>(buffer, GetGaspiInstance(), 0, [] (const auto& aggregate, const auto& value) { return aggregate + value; });
 
-            const auto& node_id = GetSmallestSubEntityIndex<0>(cell);
-            const auto& edge_id = GetSmallestSubEntityIndex<1>(cell);
-            const auto& face_id = GetSmallestSubEntityIndex<2>(cell);
-            const std::size_t cell_id = cell.GetTopology().GetIndex();
+    std::vector<int> expected_global_dofs(4, 0);
+    for (std::size_t p = 0; p < num_procs; ++p)
+    {
+        expected_global_dofs[0] += 3 * static_cast<int>(1 + p);
+        expected_global_dofs[3] += 12 * static_cast<int>(2 + p);
+    }
 
-            field_global[cell_id][0] = 1 + cell_id;
+    EXPECT_EQ(true, std::equal(global_dofs.begin(), global_dofs.end(), expected_global_dofs.begin()));
+}
 
-            if (node_id.first == 0) offset[0] = &field_node[node_id.second][0] - &field_global[0];
-            if (edge_id.first == 0) offset[1] = &field_edge[edge_id.second][0] - &field_global[0];
-            if (face_id.first == 0) offset[2] = &field_face[face_id.second][0] - &field_global[0];
-            if (cell_id == 0) offset[3] = &field_cell[0] - &field_global[0];
+TEST_F(GlobalBufferTest_2d, AllGather_CellCount)
+{
+    using namespace ::HPM;
+
+    const auto& mesh = GetMesh();
+    constexpr auto Dofs = dof::MakeDofs<0, 0, 0, 1>();
+    auto buffer = GetBuffer<int>(Dofs);
+    auto& body = GetDistributedDispatcher();
+    auto AllCells{mesh.GetEntityRange<2>()};
+
+    // Initialization.
+    buffer[0] = 0;
+
+    body.Execute(
+        HPM::ForEachEntity(
+        AllCells,
+        std::tuple(Write(Global(buffer))),
+        [&](const auto&, auto&&, auto& lvs) {
+            using namespace ::HPM::atomic;
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            AtomicAdd(global_dofs[0], 1);
+        })
+    );    
+    
+    const auto& global_dofs = ::HPM::auxiliary::AllReduce<3>(buffer, GetGaspiInstance(), 0, [] (const auto& aggregate, const auto& value) { return aggregate + value; });
+
+    EXPECT_EQ(1, global_dofs.size());
+    EXPECT_EQ(mesh.GetNumEntities(), global_dofs[0]);
+}
+
+TEST_F(GlobalBufferTest_3d, AllGather_CellCount)
+{
+    using namespace ::HPM;
+
+    const auto& mesh = GetMesh();
+    constexpr auto Dofs = dof::MakeDofs<0, 0, 0, 0, 1>();
+    auto buffer = GetBuffer<int>(Dofs);
+    auto& body = GetDistributedDispatcher();
+    auto AllCells{mesh.GetEntityRange<3>()};
+
+    // Initialization.
+    buffer[0] = 0;
+
+    body.Execute(
+        HPM::ForEachEntity(
+        AllCells,
+        std::tuple(Write(Global(buffer))),
+        [&](const auto&, auto&&, auto& lvs) {
+            using namespace ::HPM::atomic;
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            AtomicAdd(global_dofs[0], 1);
+        })
+    );    
+    
+    const auto& global_dofs = ::HPM::auxiliary::AllReduce<4>(buffer, GetGaspiInstance(), 0, [] (const auto& aggregate, const auto& value) { return aggregate + value; });
+
+    EXPECT_EQ(1, global_dofs.size());
+    EXPECT_EQ(mesh.GetNumEntities(), global_dofs[0]);
+}
+
+TEST_F(GlobalBufferTest_2d, AllGather)
+{
+    using namespace ::HPM;
+    using namespace ::HPM::auxiliary;
+
+    const auto& mesh = GetMesh();
+    constexpr auto Dofs = dof::MakeDofs<1, 1, 2, 4>();
+    auto buffer = GetBuffer<int>(Dofs);
+    auto& body = GetDistributedDispatcher();
+    auto AllCells{mesh.GetEntityRange<2>()};
+    const std::size_t proc_id = GetProcessId();
+    const std::size_t num_procs = GetNumProcesses();
+
+    // Initialization.
+    buffer[0] = 0;
+
+    body.Execute(
+        HPM::ForEachEntity(
+        AllCells,
+        std::tuple(ReadWrite(Global(buffer))),
+        [&](const auto&, auto&&, auto& lvs) {
+            using namespace ::HPM::atomic;
+
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            AtomicAdd(global_dofs[0], 1);
+        })
+    );    
+    
+    const auto& cells_per_proc = ::HPM::auxiliary::AllGather<3>(buffer, GetGaspiInstance());
+    EXPECT_EQ(4 * num_procs, cells_per_proc.size());
+
+    std::size_t total_num_cells = 0;
+    for (std::size_t p = 0; p < num_procs; ++p)
+    {
+        total_num_cells += cells_per_proc[4 * p];
+    }
+    EXPECT_EQ(mesh.GetNumEntities(), total_num_cells);
+
+    body.Execute(
+        HPM::ForEachEntity(
+        AllCells,
+        std::tuple(ReadWrite(Cell(buffer)), ReadWrite(Global(buffer))),
+        [&](const auto&, auto&&, auto& lvs) {
+            auto& cell_dofs = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<1>(lvs));
+           
+            cell_dofs[0] = 1 + proc_id;
+            cell_dofs[1] = -1 * static_cast<int>(1 + proc_id);
+
+            global_dofs[0] = 3 * static_cast<int>(1 + proc_id);
+            global_dofs[3] = 12 * static_cast<int>(2 + proc_id);
         })
     );
 
-    EXPECT_EQ(offset[0], expected_offset[0]);
-    EXPECT_EQ(offset[1], expected_offset[1]);
-    EXPECT_EQ(offset[2], expected_offset[2]);
-    EXPECT_EQ(offset[3], expected_offset[3]);
+    ConstexprFor<0, 3>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
+        {
+            using namespace ::HPM::auxiliary;
 
-    const bool expected_assignment = [&field, &mesh] () 
-        { 
-            for (std::size_t i = 0; i < mesh.GetNumEntities(); ++i) 
-                if (field[i][0] != (1 + i)) return false;
-            return true; 
-        } ();
-    EXPECT_EQ(true, expected_assignment);
-    */
+            const std::size_t expected_num_dofs = mesh.template GetNumEntities<Dimension>() * Dofs.template At<Dimension>();
+
+            const auto& all_dofs = AllGather<Dimension>(buffer, GetGaspiInstance());
+            EXPECT_EQ(expected_num_dofs, all_dofs.size());
+
+            const auto& dofs_per_process = GetDofsPerProcess<Dimension>(buffer, GetGaspiInstance());
+            EXPECT_EQ(num_procs, dofs_per_process.size());
+            EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+
+            if constexpr (Dimension == 2)
+            {
+                const int* ptr = all_dofs.data();
+                bool all_correct = true;
+                for (std::size_t p = 0; p < num_procs; ++p)
+                {
+                    for (std::size_t i = 0; i < dofs_per_process[p]; i += Dofs.template At<2>())
+                    {
+                        if (ptr[i + 0] != static_cast<int>(1 + p)) all_correct = false;
+                        if (ptr[i + 1] != -1 * static_cast<int>(1 + p)) all_correct = false;
+                        if (!all_correct) break;
+                    }
+
+                    if (!all_correct) break;
+                    ptr += dofs_per_process[p];
+                }
+
+                EXPECT_EQ(true, all_correct);
+            }
+        });
+
+    // Global dofs.
+    const std::size_t expected_num_dofs = num_procs * Dofs.template At<3>();
+
+    const auto& all_dofs = AllGather<3>(buffer, GetGaspiInstance());
+    EXPECT_EQ(expected_num_dofs, all_dofs.size());
+
+    const auto& dofs_per_process = GetDofsPerProcess<3>(buffer, GetGaspiInstance());
+    EXPECT_EQ(num_procs, dofs_per_process.size());
+    EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+
+    const int* ptr = all_dofs.data();
+    bool all_correct = true;
+    for (std::size_t p = 0; p < num_procs; ++p)
+    {
+        for (std::size_t i = 0; i < dofs_per_process[p]; i += Dofs.template At<3>())
+        {
+            if (ptr[i + 0] != 3 * static_cast<int>(1 + p)) all_correct = false;
+            if (ptr[i + 3] != 12 * static_cast<int>(2 + p)) all_correct = false;
+            if (!all_correct) break;
+        }
+
+        if (!all_correct) break;
+        ptr += dofs_per_process[p];
+    }
+    EXPECT_EQ(true, all_correct);
+}
+
+TEST_F(GlobalBufferTest_3d, AllGather)
+{
+    using namespace ::HPM;
+    using namespace ::HPM::auxiliary;
+
+    const auto& mesh = GetMesh();
+    constexpr auto Dofs = dof::MakeDofs<1, 1, 1, 2, 4>();
+    auto buffer = GetBuffer<int>(Dofs);
+    auto& body = GetDistributedDispatcher();
+    auto AllCells{mesh.GetEntityRange<3>()};
+    const std::size_t proc_id = GetProcessId();
+    const std::size_t num_procs = GetNumProcesses();
+
+    // Initialization.
+    buffer[0] = 0;
+
+    body.Execute(
+        HPM::ForEachEntity(
+        AllCells,
+        std::tuple(ReadWrite(Global(buffer))),
+        [&](const auto&, auto&&, auto& lvs) {
+            using namespace ::HPM::atomic;
+
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            AtomicAdd(global_dofs[0], 1);
+        })
+    );    
+    
+    const auto& cells_per_proc = ::HPM::auxiliary::AllGather<4>(buffer, GetGaspiInstance());
+    EXPECT_EQ(4 * num_procs, cells_per_proc.size());
+
+    std::size_t total_num_cells = 0;
+    for (std::size_t p = 0; p < num_procs; ++p)
+    {
+        total_num_cells += cells_per_proc[4 * p];
+    }
+    EXPECT_EQ(mesh.GetNumEntities(), total_num_cells);
+
+    body.Execute(
+        HPM::ForEachEntity(
+        AllCells,
+        std::tuple(ReadWrite(Cell(buffer)), ReadWrite(Global(buffer))),
+        [&](const auto&, auto&&, auto& lvs) {
+            auto& cell_dofs = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
+            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<1>(lvs));
+           
+            cell_dofs[0] = 1 + proc_id;
+            cell_dofs[1] = -1 * static_cast<int>(1 + proc_id);
+
+            global_dofs[0] = 3 * static_cast<int>(1 + proc_id);
+            global_dofs[3] = 12 * static_cast<int>(2 + proc_id);
+        })
+    );
+
+    ConstexprFor<0, 4>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
+        {
+            using namespace ::HPM::auxiliary;
+
+            const std::size_t expected_num_dofs = mesh.template GetNumEntities<Dimension>() * Dofs.template At<Dimension>();
+
+            const auto& all_dofs = AllGather<Dimension>(buffer, GetGaspiInstance());
+            EXPECT_EQ(expected_num_dofs, all_dofs.size());
+
+            const auto& dofs_per_process = GetDofsPerProcess<Dimension>(buffer, GetGaspiInstance());
+            EXPECT_EQ(num_procs, dofs_per_process.size());
+            EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+
+            if constexpr (Dimension == 3)
+            {
+                const int* ptr = all_dofs.data();
+                bool all_correct = true;
+                for (std::size_t p = 0; p < num_procs; ++p)
+                {
+                    for (std::size_t i = 0; i < dofs_per_process[p]; i += Dofs.template At<3>())
+                    {
+                        if (ptr[i + 0] != static_cast<int>(1 + p)) all_correct = false;
+                        if (ptr[i + 1] != -1 * static_cast<int>(1 + p)) all_correct = false;
+                        if (!all_correct) break;
+                    }
+
+                    if (!all_correct) break;
+                    ptr += dofs_per_process[p];
+                }
+
+                EXPECT_EQ(true, all_correct);
+            }
+        });
+
+    // Global dofs.
+    const std::size_t expected_num_dofs = num_procs * Dofs.template At<4>();
+
+    const auto& all_dofs = AllGather<4>(buffer, GetGaspiInstance());
+    EXPECT_EQ(expected_num_dofs, all_dofs.size());
+
+    const auto& dofs_per_process = GetDofsPerProcess<4>(buffer, GetGaspiInstance());
+    EXPECT_EQ(num_procs, dofs_per_process.size());
+    EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+
+    const int* ptr = all_dofs.data();
+    bool all_correct = true;
+    for (std::size_t p = 0; p < num_procs; ++p)
+    {
+        for (std::size_t i = 0; i < dofs_per_process[p]; i += Dofs.template At<4>())
+        {
+            if (ptr[i + 0] != 3 * static_cast<int>(1 + p)) all_correct = false;
+            if (ptr[i + 3] != 12 * static_cast<int>(2 + p)) all_correct = false;
+            if (!all_correct) break;
+        }
+
+        if (!all_correct) break;
+        ptr += dofs_per_process[p];
+    }
+    EXPECT_EQ(true, all_correct);
 }
