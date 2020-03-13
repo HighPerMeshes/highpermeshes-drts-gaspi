@@ -29,6 +29,18 @@ jobs:
     - name: create build directory
       run: mkdir -p build
 
+    - name: build highpermeshes-dsl
+      run: >-
+        cd .. && 
+        git clone https://github.com/HighPerMeshes/highpermeshes-dsl.git &&
+        cd highpermeshes-dsl &&
+        mkdir build && cd build &&
+        cmake .. && make
+
+    - name: run tests
+      working-directory: ./build/highpermeshes-dsl/tests
+      run: ./tests
+
     - name: install GPI2 (ethernet)
       working-directory: ./build
       run: >-
@@ -61,18 +73,6 @@ jobs:
         cmake .. && make &&
         cd .. &&
         mkdir lib && cp build/src/libACE.a lib
-
-    - name: build highpermeshes-dsl
-      run: >-
-        cd .. && 
-        git clone https://github.com/HighPerMeshes/highpermeshes-dsl.git &&
-        cd highpermeshes-dsl &&
-        mkdir build && cd build &&
-        cmake .. && make
-
-    - name: run tests
-      working-directory: ./build/tests
-      run: ./tests
 
     - name: build highpermeshes-drts-gaspi
       working-directory: ./build
