@@ -19,12 +19,6 @@ jobs:
     - name: install metis
       working-directory: ./CI/github
       run: chmod +x ./install_metis.sh && ./install_metis.sh
-    - name: install opencl
-      working-directory: ./CI/github
-      run: chmod +x ./install_opencl.sh && ./install_opencl.sh
-    - name: install libnuma
-      working-directory: ./CI/github
-      run: chmod +x ./install_libnuma.sh && ./install_libnuma.sh
 
     - name: create build directory
       run: mkdir -p build
@@ -38,8 +32,16 @@ jobs:
         cmake .. && make
 
     - name: run tests
-      working-directory: ./build/highpermeshes-dsl/tests
+      working-directory: ./build/highpermeshes-dsl/build/tests
       run: ./tests
+
+    - name: install opencl
+      working-directory: ./CI/github
+      run: chmod +x ./install_opencl.sh && ./install_opencl.sh
+
+    - name: install libnuma
+      working-directory: ./CI/github
+      run: chmod +x ./install_libnuma.sh && ./install_libnuma.sh
 
     - name: install GPI2 (ethernet)
       working-directory: ./build
