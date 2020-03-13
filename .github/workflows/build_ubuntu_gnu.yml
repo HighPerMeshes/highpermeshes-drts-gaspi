@@ -32,7 +32,7 @@ jobs:
         cmake .. && make
 
     - name: run tests
-      working-directory: ./build/highpermeshes-dsl/build/tests
+      working-directory: ../highpermeshes-dsl/build/tests
       run: ./tests
 
     - name: install opencl
