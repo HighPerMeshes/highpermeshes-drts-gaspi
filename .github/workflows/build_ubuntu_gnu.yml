@@ -84,11 +84,3 @@ jobs:
         ace_dep="-DACE_INCLUDE_DIR=ACE/include -DACE_LIBRARY=ACE/lib/libACE.a" &&
         gaspi_dep="-DGaspiCxx_INCLUDE_DIR=GaspiCxx/include -DGaspiCxx_LIBRARY=GaspiCxx/lib/libGaspiCxx.a" &&
         cmake $ace_dep $gaspi_dep .. && make
-
-    - name: run tests
-      working-directory: ./build
-      run: >-
-        export PATH=$PATH:`pwd`/GPI-2-ethernet/bin &&
-        cd tests &&
-        for i in 1 2 3 4; do hostname >> hostfile; done &&
-        gaspi_run -n 4 -m hostfile ./tests
