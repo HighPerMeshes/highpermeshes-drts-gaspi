@@ -216,6 +216,7 @@ TEST_F(GlobalBufferTest_3d, AllGather_CellCount)
     EXPECT_EQ(mesh.GetNumEntities(), global_dofs[0]);
 }
 
+#if !defined(SINGLENODE)
 TEST_F(GlobalBufferTest_2d, AllGather)
 {
     using namespace ::HPM;
@@ -445,3 +446,4 @@ TEST_F(GlobalBufferTest_3d, AllGather)
     }
     EXPECT_EQ(true, all_correct);
 }
+#endif
