@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <numeric>
 #include <vector>
 
 #if !defined(SINGLENODE)
@@ -85,8 +86,7 @@ namespace HPM::auxiliary
         std::vector<std::size_t> sizes = GetDofsPerProcess<Dimension>(buffer, gaspi);
         std::for_each(sizes.begin(), sizes.end(), [] (auto& item) { item *= sizeof(ValueT); });
         
-        std::size_t total_size = 0UL;
-        std::for_each(sizes.begin(), sizes.end(), [&total_size] (const auto& item) { total_size += item; });
+        const std::size_t total_size = std::accumulate(sizes.begin(), sizes.end(), 0UL, std::plus<std::size_t>{});
         const std::size_t total_num_elements = total_size / sizeof(ValueT);
         
         // Data transfer.
