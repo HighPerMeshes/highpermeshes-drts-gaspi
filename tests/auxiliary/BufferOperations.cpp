@@ -3,6 +3,7 @@
 // Distributed under the MIT Software License
 // (See accompanying file LICENSE)
 
+#include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <utility>
@@ -282,7 +283,9 @@ TEST_F(GlobalBufferTest_2d, AllGather)
 
             const auto& dofs_per_process = GetDofsPerProcess<Dimension>(buffer, GetGaspiInstance());
             EXPECT_EQ(num_procs, dofs_per_process.size());
-            EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+            std::size_t num_dofs = 0UL;
+            std::for_each(dofs_per_process.begin(), dofs_per_process.end(), [&num_dofs] (const auto& item) { num_dofs += item; });
+            EXPECT_EQ(expected_num_dofs, num_dofs);
 
             if constexpr (Dimension == 2)
             {
@@ -313,7 +316,9 @@ TEST_F(GlobalBufferTest_2d, AllGather)
 
     const auto& dofs_per_process = GetDofsPerProcess<3>(buffer, GetGaspiInstance());
     EXPECT_EQ(num_procs, dofs_per_process.size());
-    EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+    std::size_t num_dofs = 0UL;
+    std::for_each(dofs_per_process.begin(), dofs_per_process.end(), [&num_dofs] (const auto& item) { num_dofs += item; });
+    EXPECT_EQ(expected_num_dofs, num_dofs);
 
     const int* ptr = all_dofs.data();
     bool all_correct = true;
@@ -397,7 +402,9 @@ TEST_F(GlobalBufferTest_3d, AllGather)
 
             const auto& dofs_per_process = GetDofsPerProcess<Dimension>(buffer, GetGaspiInstance());
             EXPECT_EQ(num_procs, dofs_per_process.size());
-            EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+            std::size_t num_dofs = 0UL;
+            std::for_each(dofs_per_process.begin(), dofs_per_process.end(), [&num_dofs] (const auto& item) { num_dofs += item; });
+            EXPECT_EQ(expected_num_dofs, num_dofs);
 
             if constexpr (Dimension == 3)
             {
@@ -428,7 +435,9 @@ TEST_F(GlobalBufferTest_3d, AllGather)
 
     const auto& dofs_per_process = GetDofsPerProcess<4>(buffer, GetGaspiInstance());
     EXPECT_EQ(num_procs, dofs_per_process.size());
-    EXPECT_EQ(expected_num_dofs, std::reduce(dofs_per_process.begin(), dofs_per_process.end(), 0UL, std::plus<std::size_t>{}));
+    std::size_t num_dofs = 0UL;
+    std::for_each(dofs_per_process.begin(), dofs_per_process.end(), [&num_dofs] (const auto& item) { num_dofs += item; });
+    EXPECT_EQ(expected_num_dofs, num_dofs);
 
     const int* ptr = all_dofs.data();
     bool all_correct = true;
