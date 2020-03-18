@@ -15,5 +15,5 @@ target_link_libraries( tests LINK_PRIVATE
     GTest::GTest 
     GTest::Main 
     HighPerMeshesDRTS::HighPerMeshesDRTS )
-
-#configure_file(./run_distributed_tests.sh run_distributed_tests.sh COPYONLY)
+    
+configure_file(./run_distributed_tests.sh run_distributed_tests.sh COPYONLY)
