@@ -273,7 +273,7 @@ TEST_F(GlobalBufferTest_2d, AllGather)
         })
     );
 
-    ConstexprFor<0, 3>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
+    ConstexprFor<2, 3>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
         {
             using namespace ::HPM::auxiliary;
 
@@ -307,7 +307,7 @@ TEST_F(GlobalBufferTest_2d, AllGather)
                 EXPECT_EQ(true, all_correct);
             }
         });
-
+    
     // Global dofs.
     const std::size_t expected_num_dofs = num_procs * Dofs.template At<3>();
 
@@ -389,7 +389,7 @@ TEST_F(GlobalBufferTest_3d, AllGather)
         })
     );
 
-    ConstexprFor<0, 4>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
+    ConstexprFor<3, 4>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
         {
             using namespace ::HPM::auxiliary;
 
