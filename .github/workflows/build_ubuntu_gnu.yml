@@ -19,15 +19,29 @@ jobs:
     - name: install metis
       working-directory: ./CI/github
       run: chmod +x ./install_metis.sh && ./install_metis.sh
-    - name: install opencl
-      working-directory: ./CI/github
-      run: chmod +x ./install_opencl.sh && ./install_opencl.sh
-    - name: install libnuma
-      working-directory: ./CI/github
-      run: chmod +x ./install_libnuma.sh && ./install_libnuma.sh
 
     - name: create build directory
       run: mkdir -p build
+
+    - name: build highpermeshes-dsl
+      run: >-
+        cd .. && 
+        git clone https://github.com/HighPerMeshes/highpermeshes-dsl.git &&
+        cd highpermeshes-dsl &&
+        mkdir build && cd build &&
+        cmake .. && make
+
+    - name: run tests
+      working-directory: ../highpermeshes-dsl/build/tests
+      run: ./tests
+
+    - name: install opencl
+      working-directory: ./CI/github
+      run: chmod +x ./install_opencl.sh && ./install_opencl.sh
+
+    - name: install libnuma
+      working-directory: ./CI/github
+      run: chmod +x ./install_libnuma.sh && ./install_libnuma.sh
 
     - name: install GPI2 (ethernet)
       working-directory: ./build
@@ -61,14 +75,6 @@ jobs:
         cmake .. && make &&
         cd .. &&
         mkdir lib && cp build/src/libACE.a lib
-
-    - name: build highpermeshes-dsl
-      run: >-
-        cd .. && 
-        git clone https://github.com/HighPerMeshes/highpermeshes-dsl.git &&
-        cd highpermeshes-dsl &&
-        mkdir build && cd build &&
-        cmake .. && make
 
     - name: build highpermeshes-drts-gaspi
       working-directory: ./build

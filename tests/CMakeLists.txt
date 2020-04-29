@@ -1,6 +1,7 @@
 find_package(GTest REQUIRED)
 
 add_executable( tests
+    auxiliary/BufferOperations.cpp
     drts/Task.cpp
     drts/comm/BufferTest.cpp 
     drts/comm/CLBufferTest.cpp

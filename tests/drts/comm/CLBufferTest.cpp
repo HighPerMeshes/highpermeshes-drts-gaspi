@@ -111,7 +111,7 @@ namespace HPM::drts::comm
                                         " input[get_global_id(0)+offset]= get_global_id(0)+offset;"
                                         "}";
 
-            kernel = device.getBoundKernel(kernel_code, "init", buffer->data.data(), static_cast<int>(offset));
+            kernel = device.getBoundKernel(kernel_code, "init", buffer->GetData(), static_cast<int>(offset));
         }
 
         ~CLBufferTest()
@@ -161,7 +161,7 @@ namespace HPM::drts::comm
             receiveBuffer->Unpack();
         }
 
-        device.updateHost<int>(buffer->data.data(), buffer->data.size());
+        device.updateHost<int>(buffer->GetData(), buffer->GetSize());
 
         if (myRank == 0 || myRank == 1)
         {
@@ -220,7 +220,7 @@ namespace HPM::drts::comm
             receiver->Unpack();
         }
 
-        device.updateHost<int>(buffer->data.data(), buffer->data.size());
+        device.updateHost<int>(buffer->GetData(), buffer->GetSize());
 
         for (size_t i = 0; i < globalSize; ++i)
         {
