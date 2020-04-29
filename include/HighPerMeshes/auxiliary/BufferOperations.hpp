@@ -56,7 +56,7 @@ namespace HPM::auxiliary
         std::size_t* source_ptr = reinterpret_cast<std::size_t*>(source_segment.allocator().allocate(source_size));
         std::size_t* target_ptr = reinterpret_cast<std::size_t*>(target_segment.allocator().allocate(target_size));
 
-        source_ptr[0] = dof_partition.second;
+        source_ptr[0] = dof_partition.GetSize();
     
         allgather(source_ptr, source_segment, target_ptr, target_segment, source_size, gaspi.gaspi_context);
         gaspi.gaspi_runtime.barrier();
@@ -90,14 +90,14 @@ namespace HPM::auxiliary
         const std::size_t total_num_elements = total_size / sizeof(ValueT);
         
         // Data transfer.
-        const std::size_t source_size = dof_partition.second * sizeof(ValueT);
+        const std::size_t source_size = dof_partition.GetSize() * sizeof(ValueT);
         const std::size_t target_size = total_num_elements * sizeof(ValueT);
 
         ValueT* source_ptr = reinterpret_cast<ValueT*>(source_segment.allocator().allocate(source_size));
         ValueT* target_ptr = reinterpret_cast<ValueT*>(target_segment.allocator().allocate(target_size));
         
         // Copy-in all dofs from this process for the given `Dimension`.
-        std::copy(buffer.begin() + dof_partition.first, buffer.begin() + dof_partition.first + dof_partition.second, source_ptr);
+        std::copy(dof_partition.begin(), dof_partition.end(), source_ptr);
         
         allgatherv(source_ptr, source_segment, target_ptr, target_segment, sizes.data(), gaspi.gaspi_context);
         gaspi.gaspi_runtime.barrier();
