@@ -116,20 +116,20 @@ int main(int argc, char **argv)
         });
       });
 
-  auto volume_kernel_openmp =
-      HPM::MeshLoop{
-          AllCells,
-          volume_kernel.access_definitions,
-          HPM::internal::OpenMP_ForEachEntity<3>{},
-          volume_kernel.loop_body};
-
   std::cout << "volume_kernel Without OpenMP: \n"
             << MeasureKernel(volume_kernel)
             << "\n";
 
-  std::cout << "volume_kernel With OpenMP: \n"
-            << MeasureKernel(volume_kernel_openmp)
-            << "\n";
+  // auto volume_kernel_openmp =
+  //   HPM::MeshLoop{
+  //       AllCells,
+  //       volume_kernel.access_definitions,
+  //       HPM::internal::OpenMP_ForEachEntity<3>{},
+  //       volume_kernel.loop_body};
+
+  // std::cout << "volume_kernel With OpenMP: \n"
+  //           << MeasureKernel(volume_kernel_openmp)
+  //           << "\n";
 
   auto surface_kernel = HPM::ForEachIncidence<2>(
       AllCells,
@@ -171,20 +171,20 @@ int main(int argc, char **argv)
         });
       });
 
-  auto surface_kernel_openmp =
-      HPM::MeshLoop{
-          AllCells,
-          surface_kernel.access_definitions,
-          HPM::internal::OpenMP_ForEachIncidence<3, 2>{},
-          surface_kernel.loop_body};
-
   std::cout << "surface_kernel Without OpenMP: \n"
             << MeasureKernel(surface_kernel)
             << "\n";
 
-  std::cout << "surface_kernel With OpenMP: \n"
-            << MeasureKernel(surface_kernel_openmp)
-            << "\n";
+  // auto surface_kernel_openmp =
+  //   HPM::MeshLoop{
+  //       AllCells,
+  //       surface_kernel.access_definitions,
+  //       HPM::internal::OpenMP_ForEachIncidence<3, 2>{},
+  //       surface_kernel.loop_body};
+
+  // std::cout << "surface_kernel With OpenMP: \n"
+  //           << MeasureKernel(surface_kernel_openmp)
+  //           << "\n";
 
   constexpr int dim = Mesh::CellDimension;
   HPM::dataType::Vec<double, 8> d;
@@ -232,20 +232,20 @@ int main(int argc, char **argv)
             }
           });
 
-  auto matrix_vec_product_openmp =
-      HPM::MeshLoop{
-          AllCells,
-          matrix_vec_product.access_definitions,
-          HPM::internal::OpenMP_ForEachEntity<3>{},
-          matrix_vec_product.loop_body};
-
   std::cout << "matrix_vec_product Without OpenMP: \n"
             << MeasureKernel(matrix_vec_product)
             << "\n";
 
-  std::cout << "matrix_vec_product With OpenMP: \n"
-            << MeasureKernel(matrix_vec_product_openmp)
-            << "\n";
+  // auto matrix_vec_product_openmp =
+  //   HPM::MeshLoop{
+  //       AllCells,
+  //       matrix_vec_product.access_definitions,
+  //       HPM::internal::OpenMP_ForEachEntity<3>{},
+  //       matrix_vec_product.loop_body};
+
+  // std::cout << "matrix_vec_product With OpenMP: \n"
+  //           << MeasureKernel(matrix_vec_product_openmp)
+  //           << "\n";
 
   
 
