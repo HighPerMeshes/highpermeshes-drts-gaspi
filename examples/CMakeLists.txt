@@ -16,8 +16,6 @@ target_link_libraries (scalabilityNeighbors
     HighPerMeshesDRTS::HighPerMeshesDRTS
 )
 
-add_executable( experiments Experiments.cpp )
-
 find_package(OpenMP REQUIRED)
 
 add_executable( midg2
@@ -29,17 +27,32 @@ target_link_libraries (midg2
     OpenMP::OpenMP_CXX
 )
 
-target_link_libraries(
-    experiments
-    LINK_PRIVATE
-    HighPerMeshesDRTS::HighPerMeshesDRTS
-    OpenMP::OpenMP_CXX
-)
+function( Experiment name )
+    
+    add_executable( ${name} ${name}.cpp )
 
-target_include_directories(
-    experiments
-    PRIVATE
-    ../tests/util/
-)
+    target_link_libraries(
+        ${name}
+        LINK_PRIVATE
+        HighPerMeshesDRTS::HighPerMeshesDRTS
+        OpenMP::OpenMP_CXX
+    )
+
+    target_include_directories(
+        ${name}
+        PRIVATE
+        ../tests/util/
+    )    
+endfunction()
+
+Experiment(matrix_vec_product)
+Experiment(matrix_vec_product_omp)
+
+Experiment(surface_kernel)
+Experiment(surface_kernel_omp)
+
+Experiment(volume_kernel)
+Experiment(volume_kernel_omp)
+
 
 add_subdirectory(Poisson_DSL)
