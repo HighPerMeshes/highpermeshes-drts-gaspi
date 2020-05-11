@@ -3,7 +3,7 @@
 int main(int argc, char **argv)
 {
 
-  Environment e { argc, argv };
+  Environment e { argc, argv, "matrix-vec-omp" };
   auto MeasureKernel = GetMeasureKernel(e.dispatcher  );
 
   constexpr int dim = Mesh::CellDimension;
@@ -59,9 +59,7 @@ int main(int argc, char **argv)
         HPM::internal::OpenMP_ForEachEntity<3>{},
         matrix_vec_product.loop_body};
 
-  std::cout << "matrix_vec_product With OpenMP: \n"
-            << MeasureKernel(matrix_vec_product_openmp)
-            << "\n";
+  print_time(MeasureKernel(matrix_vec_product_openmp));
 
   return EXIT_SUCCESS;
 }

@@ -3,7 +3,7 @@
 int main(int argc, char **argv)
 {
 
-  Environment e { argc, argv };
+  Environment e { argc, argv, "volume-omp" };
   auto MeasureKernel = GetMeasureKernel(e.dispatcher  );
 
   auto fieldH = e.hpm.GetBuffer<Vec3D>(e.mesh, Dofs);
@@ -49,9 +49,7 @@ int main(int argc, char **argv)
         HPM::internal::OpenMP_ForEachEntity<3>{},
         volume_kernel.loop_body};
 
-  std::cout << "volume_kernel With OpenMP: \n"
-            << MeasureKernel(volume_kernel_openmp)
-            << "\n";
+  print_time(MeasureKernel(volume_kernel_openmp));
 
   return EXIT_SUCCESS;
 }

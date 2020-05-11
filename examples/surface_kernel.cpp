@@ -3,7 +3,7 @@
 int main(int argc, char **argv)
 {
 
-  Environment e { argc, argv };
+  Environment e { argc, argv, "surface" };
   auto MeasureKernel = GetMeasureKernel(e.dispatcher  );
 
   auto fieldH = e.hpm.GetBuffer<Vec3D>(e.mesh, Dofs);
@@ -54,9 +54,7 @@ int main(int argc, char **argv)
         });
       });
 
-  std::cout << "surface_kernel: \n"
-            << MeasureKernel(surface_kernel)
-            << "\n";
+  print_time(MeasureKernel(surface_kernel));
 
   return EXIT_SUCCESS;
 }

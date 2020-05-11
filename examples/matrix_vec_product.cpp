@@ -3,7 +3,7 @@
 int main(int argc, char **argv)
 {
 
-  Environment e { argc, argv };
+  Environment e { argc, argv, "matrix-vec" };
   auto MeasureKernel = GetMeasureKernel(e.dispatcher  );
 
   constexpr int dim = Mesh::CellDimension;
@@ -52,9 +52,7 @@ int main(int argc, char **argv)
             }
           });
 
-  std::cout << "matrix_vec_product Without OpenMP: \n"
-            << MeasureKernel(matrix_vec_product)
-            << "\n";
+  print_time(MeasureKernel(matrix_vec_product));
 
   return EXIT_SUCCESS;
 }

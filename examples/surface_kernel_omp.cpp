@@ -3,7 +3,7 @@
 int main(int argc, char **argv)
 {
 
-  Environment e { argc, argv };
+  Environment e { argc, argv, "surface-omp" };
   auto MeasureKernel = GetMeasureKernel(e.dispatcher  );
 
   auto fieldH = e.hpm.GetBuffer<Vec3D>(e.mesh, Dofs);
@@ -61,9 +61,7 @@ int main(int argc, char **argv)
         HPM::internal::OpenMP_ForEachIncidence<3, 2>{},
         surface_kernel.loop_body};
 
-  std::cout << "surface_kernel With OpenMP: \n"
-            << MeasureKernel(surface_kernel_openmp)
-            << "\n";
+  print_time(MeasureKernel(surface_kernel_openmp));
 
   return EXIT_SUCCESS;
 }

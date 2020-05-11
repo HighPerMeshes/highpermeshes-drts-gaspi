@@ -50,7 +50,7 @@ auto GetGradientsDSL()
 constexpr auto Dofs = ::HPM::dof::MakeDofs<0, 0, 0, 20, 0>();
 constexpr std::size_t order = 3;
 using Mesh = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>;
-  
+
 struct Environment
 {
 
@@ -64,7 +64,7 @@ struct Environment
 
   HPM::DistributedDispatcher dispatcher;
 
-  Environment(int argc, char **argv) : hpm{{}, std::forward_as_tuple(argc, argv)},
+  Environment(int argc, char **argv, const char * experiment_name) : hpm{{}, std::forward_as_tuple(argc, argv)},
                                        multiplication_factor{(argc >= 4) ? std::atoi(argv[3]) : 1},
                                        mesh{
                                            [&, this]() {
@@ -86,25 +86,35 @@ struct Environment
         }();
 
     std::stringstream ss;
-    ss << "multiplication factor = " << multiplication_factor << "\n"
-       << "L1 partitions = " << hpm.GetL1PartitionNumber() << ", L2 partitions = " << hpm.GetL2PartitionNumber() << ", my rank = " << hpm.gaspi_runtime.rank().get() << "\n"
-       << "My mesh size = " << mesh_size << '\n';
+    ss << "!DATA START\n"
+       << "experiment name: " << experiment_name
+       << "\nmultiplication factor: " << multiplication_factor
+       << "\nglobal partitions: " << hpm.GetL1PartitionNumber()
+       << "\nlocal partitions: " << hpm.GetL2PartitionNumber()
+       << "\nMy rank: " << hpm.gaspi_runtime.rank().get()
+       << "\nMy mesh size = " << mesh_size << '\n';
     std::cout << ss.str() << "\n";
   }
-
 };
 
-template<typename Dispatcher>
-auto GetMeasureKernel(Dispatcher& dispatcher) {
+template <typename Dispatcher>
+auto GetMeasureKernel(Dispatcher &dispatcher)
+{
   return [&dispatcher](auto &&kernel) {
-    return HPM::auxiliary::MeasureTime(
-               [&]() {
-                 dispatcher.Execute(
-                     iterator::Range{10},
-                     std::forward<decltype(kernel)>(kernel));
-               })
+    return std::chrono::duration_cast<std::chrono::milliseconds>(HPM::auxiliary::MeasureTime(
+                                                                     [&]() {
+                                                                       dispatcher.Execute(
+                                                                           iterator::Range{10},
+                                                                           std::forward<decltype(kernel)>(kernel));
+                                                                     }))
         .count();
   };
+}
+
+template <typename Time>
+void print_time(Time &&time)
+{
+  std::cout << "execution time: " << std::forward<Time>(time) << " ms\n";
 }
 
 #endif /* ENVIRONMENT_HPP */
