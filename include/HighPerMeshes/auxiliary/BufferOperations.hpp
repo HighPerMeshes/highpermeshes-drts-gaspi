@@ -47,7 +47,7 @@ namespace HPM::auxiliary
 
         const std::size_t num_procs = gaspi.gaspi_context.size().get();
         // Pair of `starting position` (first) inside the buffer and number of dofs (second) for the given `Dimension`.
-        const auto& dof_partition = buffer.GetDofPartitionImplementation(Dimension);
+        const auto& dof_partition = buffer.GetDofPartition(Dimension);
         
         // Get partition sizes.
         const std::size_t source_size = 1 * sizeof(std::size_t);
@@ -81,7 +81,7 @@ namespace HPM::auxiliary
         segment::Segment target_segment(16 * 1024 * 1024);
 
         // Pair of `starting position` (first) inside the buffer and number of dofs (second) for the given `Dimension`.
-        const auto& dof_partition = buffer.GetDofPartitionImplementation(Dimension);
+        const auto& dof_partition = buffer.GetDofPartition(Dimension);
         // Byte-sizes of the dof partitions of all processes.
         std::vector<std::size_t> sizes = GetDofsPerProcess<Dimension>(buffer, gaspi);
         std::for_each(sizes.begin(), sizes.end(), [] (auto& item) { item *= sizeof(ValueT); });
