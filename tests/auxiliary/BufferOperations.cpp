@@ -273,7 +273,7 @@ TEST_F(GlobalBufferTest_2d, AllGather)
         })
     );
 
-    ConstexprFor<2, 3>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
+    ConstexprFor<0, 3>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
         {
             using namespace ::HPM::auxiliary;
 
@@ -389,7 +389,7 @@ TEST_F(GlobalBufferTest_3d, AllGather)
         })
     );
 
-    ConstexprFor<3, 4>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
+    ConstexprFor<0, 4>([&mesh, &Dofs, &buffer, &cells_per_proc, num_procs, total_num_cells, this] (const auto Dimension)
         {
             using namespace ::HPM::auxiliary;
 
