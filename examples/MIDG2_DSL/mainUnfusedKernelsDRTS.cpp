@@ -26,8 +26,9 @@ using RealType = HPM::dataType::Real;
 using Vec3D = HPM::dataType::Vec3D;
 using Mat3D = HPM::dataType::Mat3D;
 
-using namespace HPM;
-using namespace HPM::internal;
+using namespace ::HPM;
+using namespace ::HPM::dataType;
+using namespace ::HPM::internal;
 
 int main(int argc, char **argv)
 {
@@ -82,17 +83,23 @@ int main(int argc, char **argv)
     auto fieldE(hpm.GetBuffer<CoordinateType>(mesh, Dofs));
     
     HPM::DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
+    
     body.Execute(
         HPM::ForEachEntity(
-        AllCells,
-        std::tuple(Write(Cell(fieldE))),
-        [&](const auto &cell, auto &&, auto& localVector0) {
-            HPM::ForEach(DG::numVolNodes, [&](const auto &n) {
-                auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<0>(localVector0));
-                const auto &nodeCoords = DG::LocalToGlobal(DG::referenceCoords[n], cell.GetTopology().GetNodes());
-                fieldE[n].y = sin(M_PI * nodeCoords.x) * sin(M_PI * nodeCoords.z); //!< initial conditions for y component of electric field
-            });
-        })
+            AllCells, 
+            std::tuple(Write(Cell(fieldE))),
+            [&] (const auto& cell, auto&&, auto& lvs)
+            {
+                const auto& nodes = cell.GetTopology().GetNodes();
+
+                HPM::ForEach(DG::numVolNodes, [&](const auto n) 
+                {  
+                    const auto& nodeCoords = DG::LocalToGlobal(DG::referenceCoords[n], nodes);
+                    auto& fieldE = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
+
+                    fieldE[n].y = std::sin(M_PI * nodeCoords.x) * std::sin(M_PI * nodeCoords.z); 	//!< initial conditions for y component of electric field
+                });
+            })
     );
 
     /** \brief create storage for intermediate fields*/
@@ -109,19 +116,22 @@ int main(int argc, char **argv)
     /** \brief outer time step loop, Runge-Kutta loop, maxwell's kernels (surface and volume) and Runge-Kutta kernel  */
 
     /** \brief determine time step size (polynomial order-based and algorithmic-specific) */
-    
     HPM::dataType::MinType<double> MinTimeStep;
+
     body.Execute(
         HPM::ForEachEntity(
-        AllCells,
-        std::tuple {},
-        [&](const auto &cell, auto&&, auto&&) {
-            const RealType face_normal_scaling_factor = 2.0 / cell.GetGeometry().GetAbsJacobianDeterminant();
+            AllCells,
+            std::tuple {},
+            [&](const auto& cell, auto&&, auto&&) 
+            {
+                const RealType face_normal_scaling_factor = 2.0 / cell.GetGeometry().GetAbsJacobianDeterminant();
 
-            HPM::ForEachSubEntity(cell, [&](const auto &face) {
-                MinTimeStep.Update(1.0 / (face.GetGeometry().GetNormal() * face_normal_scaling_factor).Norm());
-            });
-    }));
+                HPM::ForEachSubEntity(cell, [&](const auto& face) 
+                {
+                    MinTimeStep.Update(1.0 / (face.GetGeometry().GetNormal() * face_normal_scaling_factor).Norm());
+                });
+            }
+        ));
 
     RealType timeStep = finalTime / floor(finalTime * (order + 1) * (order + 1) / (.5 * MinTimeStep.Get()));
     std::cout << "time step: " << timeStep << std::endl;
@@ -130,6 +140,19 @@ int main(int argc, char **argv)
         auto t1 = std::chrono::high_resolution_clock::now();
 
         /** \brief Maxwell's surface kernel */
+        Vec<Matrix<RealType, DG::numVolNodes, DG::NumSurfaceNodes>, Mesh::NumFacesPerCell> lift;
+        
+        for (std::size_t face_index = 0; face_index < Mesh::NumFacesPerCell; ++face_index)
+        {
+            for (std::size_t m = 0; m < DG::NumSurfaceNodes; ++m)
+            {
+                for (std::size_t n = 0; n < DG::numVolNodes; ++n)
+                {
+                    lift[face_index][n][m] = DG::LIFT[face_index][m][n];
+                }
+            }
+        }
+
         auto surfaceKernelLoop = HPM::ForEachIncidence<2>(
             AllCells,
             std::tuple(
@@ -139,37 +162,71 @@ int main(int argc, char **argv)
                 Read(NeighboringMeshElementOrSelf(fieldE)),
                 ReadWrite(ContainingMeshElement(rhsH)),
                 ReadWrite(ContainingMeshElement(rhsE))),
-            [&](const auto &element, const auto &face, const auto&, auto &lvs) {
+            [&](const auto &element, const auto &face, const auto&, auto &lvs) 
+            {
                 const std::size_t face_index = face.GetTopology().GetLocalIndex();
                 const RealType face_normal_scaling_factor = 2.0 / element.GetGeometry().GetAbsJacobianDeterminant();
+
                 const Vec3D &face_normal = face.GetGeometry().GetNormal() * face_normal_scaling_factor; //!< get all normal coordinates for each face of an element
                 const RealType Edg = face_normal.Norm() * 0.5;                                          //!< get edge length for each face
                 const Vec3D &face_unit_normal = face.GetGeometry().GetUnitNormal();
                 const auto &localMap{DgNodeMap.Get(element, face)};
 
-                HPM::ForEach(DG::NumSurfaceNodes, [&](const std::size_t m) {
-                    const auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-                    const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
+                const auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
+                const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
+                auto &NeighboringFieldH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
+                auto &NeighboringFieldE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
+                auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<4>(lvs));
+                auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<5>(lvs));
+                Matrix<RealType, 3, DG::NumSurfaceNodes> dE, dH, flux_E, flux_H;
 
-                    auto &NeighboringFieldH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
-                    auto &NeighboringFieldE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
+                for (std::size_t m = 0; m < DG::NumSurfaceNodes; ++m)
+                {
+                    const auto& tmp_1 = Edg * HPM::DG::Delta(fieldH, NeighboringFieldH, m, localMap); //!< fields differences
+                    const auto& tmp_2 = Edg * HPM::DG::DirectionalDelta(fieldE, NeighboringFieldE, face, m, localMap);
 
-                    const Vec3D &dH = Edg * HPM::DG::Delta(fieldH, NeighboringFieldH, m, localMap); //!< fields differences
-                    const Vec3D &dE = Edg * HPM::DG::DirectionalDelta(fieldE, NeighboringFieldE, face, m, localMap);
+                    dH[0][m] = tmp_1[0];
+                    dH[1][m] = tmp_1[1];
+                    dH[2][m] = tmp_1[2];
+                    dE[0][m] = tmp_2[0];
+                    dE[1][m] = tmp_2[1];
+                    dE[2][m] = tmp_2[2];   
+                }
 
-                    //const Vec3D &flux_H = (dH - DotProduct(dH, face_unit_normal) * face_unit_normal - CrossProduct(face_unit_normal, dE)); //!< fields fluxes
-                    //const Vec3D &flux_E = (dE - DotProduct(dE, face_unit_normal) * face_unit_normal + CrossProduct(face_unit_normal, dH));
-                    const Vec3D &flux_H = (dH - (dH*face_unit_normal) * face_unit_normal - CrossProduct(face_unit_normal, dE)); //!< fields fluxes
-                    const Vec3D &flux_E = (dE - (dE*face_unit_normal) * face_unit_normal + CrossProduct(face_unit_normal, dH));
+                #pragma omp simd
+                for (std::size_t m = 0; m < DG::NumSurfaceNodes; ++m)
+                {
+                    const auto sp_1 = dH[0][m] * face_unit_normal[0] + dH[1][m] * face_unit_normal[1] + dH[2][m] * face_unit_normal[2];
+                    flux_H[0][m] = (dH[0][m] - sp_1 * face_unit_normal[0] - (face_unit_normal[1] * dE[2][m] - face_unit_normal[2] * dE[1][m]));
+                    flux_H[1][m] = (dH[1][m] - sp_1 * face_unit_normal[1] - (face_unit_normal[2] * dE[0][m] - face_unit_normal[0] * dE[2][m]));
+                    flux_H[2][m] = (dH[2][m] - sp_1 * face_unit_normal[2] - (face_unit_normal[0] * dE[1][m] - face_unit_normal[1] * dE[0][m]));
+                    
+                    const auto sp_2 = dE[0][m] * face_unit_normal[0] + dE[1][m] * face_unit_normal[1] + dE[2][m] * face_unit_normal[2];
+                    flux_E[0][m] = (dE[0][m] - sp_2 * face_unit_normal[0] + (face_unit_normal[1] * dH[2][m] - face_unit_normal[2] * dH[1][m]));
+                    flux_E[1][m] = (dE[1][m] - sp_2 * face_unit_normal[1] + (face_unit_normal[2] * dH[0][m] - face_unit_normal[0] * dH[2][m]));
+                    flux_E[2][m] = (dE[2][m] - sp_2 * face_unit_normal[2] + (face_unit_normal[0] * dH[1][m] - face_unit_normal[1] * dH[0][m]));
+                }
+                
+                #pragma omp simd
+                for (std::size_t n = 0; n < DG::numVolNodes; ++n)
+                {
+                    RealType rhsH_0 = rhsH[n][0], rhsH_1 = rhsH[n][1], rhsH_2 = rhsH[n][2];
+                    RealType rhsE_0 = rhsE[n][0], rhsE_1 = rhsE[n][1], rhsE_2 = rhsE[n][2];
+                    
+                    for (std::size_t m = 0; m < DG::NumSurfaceNodes; ++m)
+                    {
+                        
+                        rhsH_0 += lift[face_index][n][m] * flux_H[0][m];
+                        rhsH_1 += lift[face_index][n][m] * flux_H[1][m];
+                        rhsH_2 += lift[face_index][n][m] * flux_H[2][m];
+                        rhsE_0 += lift[face_index][n][m] * flux_E[0][m];
+                        rhsE_1 += lift[face_index][n][m] * flux_E[1][m];
+                        rhsE_2 += lift[face_index][n][m] * flux_E[2][m];
+                    }
 
-                    auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<4>(lvs));
-                    auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<5>(lvs));
-
-                    HPM::ForEach(DG::numVolNodes, [&](const std::size_t n) {
-                        rhsH[n] += DG::LIFT[face_index][m][n] * flux_H;
-                        rhsE[n] += DG::LIFT[face_index][m][n] * flux_E;
-                    });
-                });
+                    rhsH[n] = Vec3D(rhsH_0, rhsH_1, rhsH_2);
+                    rhsE[n] = Vec3D(rhsE_0, rhsE_1, rhsE_2);
+                }
             });
 
         auto t2 = std::chrono::high_resolution_clock::now();
@@ -178,6 +235,19 @@ int main(int argc, char **argv)
         t1 = std::chrono::high_resolution_clock::now();
 
         /** \brief Maxwell's volume kernel */
+        RealType dg_derivative[3][DG::numVolNodes][DG::numVolNodes];
+
+        for (std::size_t i = 0; i < 3; ++i)
+        {
+            for (std::size_t m = 0; m < DG::numVolNodes; ++m)
+            {
+                for (std::size_t n = 0; n < DG::numVolNodes; ++n)
+                {
+                    dg_derivative[i][m][n] = DG::derivative[n][m][i];
+                }
+            }
+        }
+
         auto volumeKernelLoop = HPM::ForEachEntity(
             AllCells,
             std::tuple(
@@ -185,26 +255,54 @@ int main(int argc, char **argv)
                 Read(Cell(fieldE)),
                 ReadWrite(Cell(rhsH)),
                 ReadWrite(Cell(rhsE))),
-            [&](const auto &element, const auto&, auto &lvs) {
+            [&](const auto& element, const auto&, auto& lvs) 
+            {
                 const Mat3D &D = element.GetGeometry().GetInverseJacobian() * 2.0;
+                const auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
+                const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
+                auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
+                auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
+                Matrix<RealType, 3, DG::numVolNodes> derivative_E, derivative_H;
 
-                HPM::ForEach(DG::numVolNodes, [&](const std::size_t n) {
-                    Mat3D derivative_E, derivative_H; //!< derivative of fields w.r.t reference coordinates
+                for (std::size_t i = 0; i < 3; ++i)
+                {
+                    for (std::size_t j = 0; j < 3; ++j)
+                    {
+                        #pragma omp simd
+                        for (std::size_t n = 0; n < DG::numVolNodes; ++n)
+                        {
+                            derivative_E[j][n] = fieldH[0][j] * dg_derivative[i][0][n];
+                            derivative_H[j][n] = fieldE[0][j] * dg_derivative[i][0][n];
+                        }
+                    }
 
-                    const auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-                    const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
+                    for (std::size_t m = 1; m < DG::numVolNodes; ++m)
+                    {
+                        for (std::size_t j = 0; j < 3; ++j)
+                        {
+                            #pragma omp simd
+                            for (std::size_t n = 0; n < DG::numVolNodes; ++n)
+                            {
+                                derivative_E[j][n] += fieldH[m][j] * dg_derivative[i][m][n];
+                                derivative_H[j][n] += fieldE[m][j] * dg_derivative[i][m][n];
+                            }
+                        }
+                    }
+                
+                    #pragma omp simd
+                    for (std::size_t n = 0; n < DG::numVolNodes; ++n)
+                    {
+                        rhsE[n] += Vec3D(
+                            D[i][1] * derivative_E[2][n] - D[i][2] * derivative_E[1][n],
+                            D[i][2] * derivative_E[0][n] - D[i][0] * derivative_E[2][n],
+                            D[i][0] * derivative_E[1][n] - D[i][1] * derivative_E[0][n]);
 
-                    HPM::ForEach(DG::numVolNodes, [&](const std::size_t m) {
-                        derivative_H += DyadicProduct(DG::derivative[n][m], fieldH[m]);
-                        derivative_E += DyadicProduct(DG::derivative[n][m], fieldE[m]);
-                    });
-
-                    auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
-                    auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
-
-                    rhsH[n] += -Curl(D, derivative_E); //!< first half of right-hand-side of fields
-                    rhsE[n] += Curl(D, derivative_H);
-                });
+                        rhsH[n] -= Vec3D(
+                            D[i][1] * derivative_H[2][n] - D[i][2] * derivative_H[1][n],
+                            D[i][2] * derivative_H[0][n] - D[i][0] * derivative_H[2][n],
+                            D[i][0] * derivative_H[1][n] - D[i][1] * derivative_H[0][n]);
+                    }
+                }
             });
 
         t2 = std::chrono::high_resolution_clock::now();
