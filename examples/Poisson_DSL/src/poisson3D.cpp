@@ -30,7 +30,11 @@
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshesDRTS.hpp>
 
-#include "poissonFunctions.hpp"
+//#include "poissonFunctions.hpp"
+#include <../examples/Functions/outputWriter.hpp>
+#include <../examples/Functions/simplexGradients.hpp>
+#include <../examples/Functions/solver.hpp>
+#include <../examples/Functions/mathFunctions.hpp>
 
 class DEBUG;
 using namespace HPM;
@@ -139,7 +143,7 @@ int main(int argc, char** argv)
     /*------------------------------------------(5a) Solve system using inverse: ------------------------------------------------------------------------------*/
     Matrix InvMat = invertMatrix(ReducedGSM);
     outputMat(InvMat, "inverse using gauß-jordan", InvMat.size(), InvMat[0].size());
-    auto solve1 = matrixVecProduct(InvMat,reducedRHS);
+    auto solve1 = matrixVecProduct(InvMat,reducedRHS,reducedRHS.size());
     outputVec(solve1,"result using inverse (gauß-jordan)", 4);
 
     /*------------------------------------------(5b) Solve system using Jacobi algorithm: ---------------------------------------------------------------------*/
