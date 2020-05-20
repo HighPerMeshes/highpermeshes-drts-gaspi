@@ -24,3 +24,4 @@ target_link_libraries (scalabilityNeighbors
 )
 
 add_subdirectory(Poisson_DSL)
+add_subdirectory(Monodomain_DSL)
