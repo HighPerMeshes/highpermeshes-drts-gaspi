@@ -30,7 +30,6 @@
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshesDRTS.hpp>
 
-//#include "poissonFunctions.hpp"
 #include <../examples/Functions/outputWriter.hpp>
 #include <../examples/Functions/simplexGradients.hpp>
 #include <../examples/Functions/solver.hpp>
@@ -75,6 +74,68 @@ template<typename BCIdT>
 void CreateReducedGSM(const Matrix & GSM, Matrix & reducedGSM, const std::vector<BCIdT> & homDirichletNodes, bool optOutput);
 template<typename ElementT, typename T>
 auto FindElement(const ElementT & element, const T & set) -> bool;
+template <typename MeshT, typename VectorT, typename Runtime>
+void writeVTKOutput(const MeshT & mesh, std::string const & filename, const VectorT& resultVec, std::string const nameOfResultVec,
+                    std::vector<int> homDirichletNodes, const Runtime& rt);
+
+/*------------------------new functions------------------------------------*/
+//template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
+//BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, const std::vector<float> & x0);
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials,
+            const VecDslT & x0,const std::vector<int> & homDirichletNodes);
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
+auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, const int & numSolverIt, const float & tol,
+        const std::vector<int> & homDirichletNodes)->Vector;
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+auto cgSolverMatFree(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, VecDslT & x, const int & numSolverIt,
+           const float & tol, const std::vector<int> & homDirichletNodes)->VecDslT;
+
+//template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
+//BufferT computeMatrixVecProdukt(const MeshT & mesh, const BufferT & dk, LoopbodyT bodyObj, const PairT & materials);
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void computeMatrixVecProdukt(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                         BufferT & z, const std::vector<int> & homDirichletNodes);
+
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void GetMatrixVecProduct(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                             BufferT & z, const std::vector<int> & homDirichletNodes);
+
+template<typename NodeT, typename MeshT, typename PairT, typename BufferT>
+void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT & materialsPerCellId,
+                     BufferT & rowGSM, const std::vector<int> & homDirichletNodes);
+
+//template<typename BufferT>
+//float multiplyBuffer(const BufferT & a, const BufferT & b);
+template<typename VectorT>
+float mv(const VectorT & a, const VectorT & b);
+
+//template<typename BufferT>
+//BufferT multiplyScalarWithBuffer(BufferT & b, const float & a);
+template<typename VectorT>
+VectorT msv(const float & a, const VectorT & v);
+
+//template<typename BufferT>
+//BufferT minus(BufferT & a, const BufferT & b);
+template<typename VectorT>
+VectorT minus(const VectorT & a, const VectorT & b);
+
+//template<typename BufferT1, typename BufferT2>
+//BufferT1 plus(BufferT1 & a, const BufferT2 & b);
+template<typename VectorT>
+VectorT plus(const VectorT & a, const VectorT & b);
+
+template<typename BufferT>
+Vector computeXK(const Vector & xk, const BufferT & v1, const float & ak);
+
+template<typename BufferT>
+auto convert(const BufferT & rkBuffer) -> Vector;
+
+template<typename BufferT, typename VecT>
+auto convert2(const BufferT & rkBuffer, VecT & rkVec) -> VecT;
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -150,6 +211,31 @@ int main(int argc, char** argv)
     Vector xStart; xStart = {0,0,0,0};
     Vector x_jacob = JacobiSolver(ReducedGSM, reducedRHS, xStart, 31, reducedRHS.size());
     outputVec(x_jacob,"jacobi", x_jacob.size());
+
+    /*------NEW----*/
+    writeVTKOutput(mesh, "test", x_jacob, "jacobi", homDirichletNodes, hpm);
+
+    auto resultVec = cgSolver(mesh, rhs, body, materialsPerCellId, 30, 0.0001, homDirichletNodes);
+    //auto vec = matrixFreeSolver(mesh, rhs, 23, body, materialsPerCellId);
+    //outputVec(resultVec, "result of matrix free parts", 8);
+
+    int const numNodes = 8;//mesh.template GetNumEntities<0>;
+    HPM::dataType::Vec<float, numNodes> xk;
+    for (int i = 0; i < numNodes; ++i) {xk[i]=0;}
+
+    cgSolverMatFree(mesh, rhs, body, materialsPerCellId, xk, 3, 0.00001, homDirichletNodes);
+    outputVec(xk, "xk", numNodes);
+
+    // Open a file stream for each distributed context
+    /*std::ofstream file { std::string { "ResultCGPoisson_" } +  std::to_string(hpm.gaspi_context.rank().get()) + ".txt" };
+    auto AllNodes { mesh.GetEntityRange<0>() } ;
+    std::mutex mutex;
+
+    body.Execute(
+      iterator::Range{ 0 },
+      WriteLoop(mutex, file, AllNodes, xk, EveryNthStep(1))
+    );*/
+
 
     return 0;
 }
@@ -553,4 +639,501 @@ auto FindElement(const ElementT & element, const T & set) -> bool
         if (element == set[i])
             return true;
     return false;
+}
+
+
+//!
+//! \brief Creates a vtk file
+//!
+//! \param mesh
+//! \param filename
+//! \param resultVec
+//! \param nameOfResultVec
+//! \param homDirichletNodes
+//!
+template <typename MeshT, typename VectorT, typename Runtime>
+void writeVTKOutput(const MeshT & mesh, std::string const & filename, const VectorT& resultVec, std::string const nameOfResultVec,
+                    std::vector<int> homDirichletNodes, const Runtime& rt)
+{
+    int numNodes = mesh.template GetNumEntities<0>();
+    int numberOfCells  = mesh.template GetNumEntities<dim>();
+    int cellType;
+    if (dim == 3)
+        cellType = 10; // tetrahedrons
+    else if (dim == 2)
+        cellType = 5; // triangles
+    else
+        cellType = 3; // line
+
+    std::string fname = filename + ".vtu";
+    std::ofstream f(fname.c_str());
+
+    f << "<?xml version=\"1.0\"?>" << '\n'
+      << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">" << '\n'
+      << "  <UnstructuredGrid>" << '\n'
+      << "      <Piece NumberOfPoints=\"" << numNodes << "\" NumberOfCells=\"" << numberOfCells << "\">" << '\n'
+      << "          <Points>" << '\n'
+      << "              <DataArray type=\"Float64\" Name=\"Coordinates\" NumberOfComponents=\""<<dim<<"\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add node coordinates to file
+    for (const auto& node : mesh.template GetEntities<0>() )
+    {
+        auto nodeCoords = node.GetTopology().GetVertices();
+        int nodeID      = node.GetTopology().GetIndex();
+        for (int j = 0; j < dim; ++j)
+            f << nodeCoords[0][j] << ' ';
+        if ((dim*(nodeID+1)) % 12 == 0)
+            f << '\n';
+        if (((dim*(nodeID+1)) % 12 == 0) && (nodeID+1)!=numNodes)
+            f << "              ";
+    }
+
+    if ((dim*(numNodes)) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "          </Points>" << '\n'
+      << "          <Cells>" << '\n'
+      << "              <DataArray type=\"Int32\" Name=\"connectivity\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add cell information (nodes of each cell using node id)
+    int numNodesPerCell;
+    bool setInfo = false;
+    for (const auto& cell : mesh.template GetEntities<dim>() )
+    {
+        auto nodeIDs = cell.GetTopology().GetNodeIndices();
+        int  cellID  = cell.GetTopology().GetIndex();
+        if (!setInfo)
+        {
+            numNodesPerCell = nodeIDs.size();
+            setInfo = true;
+        }
+        for (int j = 0; j < nodeIDs.size(); ++j)
+            f << nodeIDs[j] << ' ';
+        if ((numNodesPerCell*(cellID+1)) % 12 == 0)
+            f << '\n';
+        if ((numNodesPerCell*(cellID+1) % 12 == 0) && (cellID+1)!=numberOfCells)
+            f << "              ";
+    }
+
+    if ((numNodesPerCell*(numberOfCells)) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "              <DataArray type=\"Int32\" Name=\"offsets\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add cell information (connectivity -> each cell consists of certain nodes)
+    for (int i = 0; i < numberOfCells; ++i)
+    {
+        f << (i+1)*numNodesPerCell << ' ';
+        if ((i+1) % 12 == 0)
+            f << '\n';
+        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
+            f << "              ";
+    }
+
+    if ((numberOfCells+1) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "              <DataArray type=\"UInt8\" Name=\"types\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add cell information (connectivity -> each cell consists of certain nodes)
+    for (int i = 0; i < numberOfCells; ++i)
+    {
+        f << cellType << ' ';
+        if ((i+1) % 12 == 0)
+            f << '\n';
+        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
+            f << "              ";
+    }
+
+    if ((numberOfCells+1) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "          </Cells>" << '\n'
+      << "          <CellData>" << '\n'
+      << "          </CellData>" << '\n'
+      << "          <PointData Scalars=\""<<nameOfResultVec<<"\">" << '\n'
+      << "              <DataArray type=\"Float64\" Name=\""<<nameOfResultVec<<"\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    int counterA = 0;
+    int counterB = 0;
+    const int id = rt.gaspi_runtime.rank().get();
+    std::cout << "Size: " << resultVec.size() << std::endl;
+    if (homDirichletNodes.size() != 0)
+        for (int i = 0; i < numNodes; i++)
+        {
+            if (homDirichletNodes[counterA] == i)
+            {
+                f << 0.0 << ' ';
+                ++counterA;
+            }
+            else
+            {
+                double val = resultVec.at(counterB);
+                std::cout<<"resultVec:   "<<id<<":"<<val<<std::endl;
+                f << id <<":"<<val << ' ';
+                ++counterB;
+            }
+
+            if ((i+1)%12==0)
+                f << '\n';
+            if ((i+1) % 12 == 0 && (i+1)!=numNodes)
+                f << "              ";
+        }
+
+    if (numNodes % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "          </PointData>" << '\n'
+      << "      </Piece>" << '\n'
+      << "  </UnstructuredGrid>" << '\n'
+      << "</VTKFile>" << '\n';
+
+    std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
+}
+
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials,
+            const VecDslT & x0, const std::vector<int> & homDirichletNodes)
+{
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> r0(mesh); //residuum
+
+    auto nodes { mesh.template GetEntityRange<0>() };
+    bodyObj.Execute(HPM::ForEachEntity(
+                  nodes,
+                  std::tuple(ReadWrite(Node(r0))),
+                  [&](auto const& node, const auto& iter, auto& lvs)
+    {
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rowGSM(mesh);
+    int nodeID = node.GetTopology().GetIndex(); // global index of node
+    GetRowOfStiffnessMatrix(node, mesh, materials, rowGSM, homDirichletNodes);
+
+    float val = 0;
+    for (int i = 0; i < rhs.GetSize(); ++i)
+        val += rowGSM[i]*x0[i];
+    r0[nodeID] = rhs[nodeID]-val;
+    }));
+
+    outputVec(r0, "r0", 8);
+    return r0;
+}
+
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
+auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, const int & numSolverIt, const float & tol,const std::vector<int> & homDirichletNodes)->Vector
+{
+    Vector xk {0,0,0,0,0,0,0,0}; //start vector
+    auto rkBuffer = rhs;//GetResiduum(mesh, rhs, bodyObj, materials, xk); // set residuum
+    Vector rk     = convert(rkBuffer);
+    Vector dk     = rk; //search direction
+    int k         = 0;
+    bool abortCriterium = false;
+
+    //while ((k < numSolverIt) || (abortCriterium == true))
+    for (int i = 0; i < numSolverIt; ++i)
+    {
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
+        //computeMatrixVecProdukt(mesh, dk, bodyObj, materials, zBuffer);
+        computeMatrixVecProdukt(mesh, dk, bodyObj, materials, zBuffer, homDirichletNodes);
+        Vector z     = convert(zBuffer);
+    for (int i = 0; i < zBuffer.GetSize();++i)
+            std::cout<<"z_"<<i<<"  =  "<<zBuffer[i]<<std::endl;
+    std::cout<<"rk*rk:  "<<mv(rk,rk)<<std::endl;
+    std::cout<<"dk*z:  "<<mv(dk,z)<<std::endl;
+    float ak     = mv(rk,rk)/mv(dk,z);//multiplyBuffer(rk, rk)/multiplyBuffer(dk, z);
+    std::cout<<"ak:  "<<ak<<std::endl;
+    xk           = computeXK(xk, dk, ak);//plus(xk, multiplyScalarWithBuffer(dk, ak));
+    for (int i = 0; i < 8;++i)
+            std::cout<<"xk_"<<i<<"  =  "<<xk[i]<<std::endl;
+    auto rkOld   = rk;
+    rk           = minus(rk, msv(ak,z));//minus(rk, multiplyScalarWithBuffer(z, ak));
+    float bk     = mv(rk,rk)/mv(rkOld,rkOld);//multiplyBuffer(rk, rk)/multiplyBuffer(rkOld, rkOld);
+        dk           = plus(rk,msv(bk,dk));//plus(multiplyScalarWithBuffer(dk, bk), rk);
+
+        if (std::sqrt(mv(rk, rk)) < tol)
+        //abortCriterium = true;
+        i = numSolverIt;
+
+        //++k;
+    }
+    return xk;
+}
+
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+auto cgSolverMatFree(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, VecDslT & x, const int & numSolverIt,
+           const float & tol, const std::vector<int> & homDirichletNodes)->VecDslT
+{
+    for (int i = 0; i < homDirichletNodes.size(); ++i)
+        std::cout<<"homNode:  "<<homDirichletNodes[i]<<std::endl;
+    int const size = 8;
+    using VecDSL = HPM::dataType::Vec<float,size>;
+
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rBuffer(mesh);
+    GetMatrixVecProduct(mesh, x, bodyObj, materials, rBuffer, homDirichletNodes);//A*x
+
+    VecDSL r;
+    for (int j = 0; j < size; ++j)
+    {
+        r[j] = rhs[j]-rBuffer[j];
+        std::cout<<"r_"<<j<<"  =  "<<r[j]<<std::endl;
+    }
+    VecDSL d     = r; //search direction
+    float r_scPr = 0; float a = 0; float b = 0;
+
+    for (int it = 0; it < numSolverIt; ++it)
+    {
+    std::cout<<"-----------------------------------"<<it<<"---------------------------------"<<std::endl;
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
+    GetMatrixVecProduct(mesh, d, bodyObj, materials, zBuffer, homDirichletNodes);// A*d
+    VecDSL z; convert2(zBuffer, z);
+    for (int i = 0; i < zBuffer.GetSize();++i)
+        std::cout<<"z_"<<i<<"  =  "<<zBuffer[i]<<std::endl;
+    for (int i = 0; i < 8;++i)
+            std::cout<<"r_"<<i<<"  =  "<<r[i]<<std::endl;
+    r_scPr = r * r; // r_k scalar product
+    std::cout<<"r_scPr: "<<r_scPr<<std::endl;
+    float dz = d*z;
+    std::cout<<"d*z: "<<dz<<std::endl;
+        a      = r_scPr/(d*z);//mv(rk,rk)/mv(dk,z);//multiplyBuffer(rk, rk)/multiplyBuffer(dk, z);
+        std::cout<<"a:  "<<a<<std::endl;
+    x      = x + (a*d);//computeXK(xk, dk, ak);//plus(xk, multiplyScalarWithBuffer(dk, ak));
+        for (int i = 0; i < 8;++i)
+            std::cout<<"x_"<<i<<"  =  "<<x[i]<<std::endl;
+    r      = r - (a*z); // minus(rk, msv(ak,z));//minus(rk, multiplyScalarWithBuffer(z, ak));
+        b      = (r*r)/r_scPr;//mv(rk,rk)/mv(rkOld,rkOld);//multiplyBuffer(rk, rk)/multiplyBuffer(rkOld, rkOld);
+        d      = r + (b * d);//plus(rk,msv(bk,dk));//plus(multiplyScalarWithBuffer(dk, bk), rk);
+
+    float eps = std::sqrt(r * r);
+        if (eps < tol)
+            it = numSolverIt;
+
+    }
+    return x;
+}
+
+
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void computeMatrixVecProdukt(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                     BufferT & z, const std::vector<int> & homDirichletNodes)
+{
+    auto nodes { mesh.template GetEntityRange<0>() };
+
+    bodyObj.Execute(HPM::ForEachEntity(
+                  nodes,
+                  std::tuple(ReadWrite(Node(z))),
+                  [&](auto const& node, const auto& iter, auto& lvs)
+    {
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rowGSM(mesh);
+        int nodeID = node.GetTopology().GetIndex(); // global index of node
+        GetRowOfStiffnessMatrix(node, mesh, materials, rowGSM, homDirichletNodes);
+
+        for (int i = 0; i < z.GetSize(); ++i)
+            z[nodeID] += rowGSM[i]*dk[i];
+    }));
+
+    return;
+}
+
+
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void GetMatrixVecProduct(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                         BufferT & z, const std::vector<int> & homDirichletNodes)
+{
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
+    auto cells { mesh.template GetEntityRange<3>() };
+    bodyObj.Execute(HPM::ForEachEntity(
+                  cells,
+                  std::tuple(ReadWrite(Node(z))),
+                  [&](auto const& cell, const auto& iter, auto& lvs)
+    {
+        const int nrows = dim+1; const int ncols = dim+1;
+        const auto& gradients = GetGradientsDSL();
+        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+    auto tmp   = cell.GetGeometry().GetJacobian();
+        float detJ = tmp.Determinant(); detJ = std::abs(detJ);
+        auto inv   = tmp.Invert();
+        auto invJT = inv.Transpose();
+
+        // Material information is integrate as diffusion tensor D = sigma * I with sigma as random scalar value.
+        // For example: sigma = 3 if material id is 1 and sigma = 6 if material id is 2
+        float sigma; float gamma = 100;
+        if (materials[cell.GetTopology().GetIndex()].second == 1) sigma = 3;
+        else if (materials[cell.GetTopology().GetIndex()].second == 2) sigma = 6;
+        else sigma = 1; // default
+
+    for (int col = 0; col < ncols; ++col)
+        {
+        bool DirichletNode = false;
+            if (FindElement(nodeIdSet[col], homDirichletNodes))
+        {
+                DirichletNode = true; //z[nodeIdSet[col]] += gamma;
+            //std::cout<<"DirichletNode:  "<< nodeIdSet[col] <<std::endl;
+        }
+
+        auto gc = invJT*gradients[col]*sigma;
+            for (int row = 0; row < nrows; ++row)
+            {
+        bool DirichletNode2 = false;
+                if (FindElement(nodeIdSet[row], homDirichletNodes))
+                {
+                    DirichletNode2 = true; //z[nodeIdSet[col]] += gamma;
+                    //std::cout<<"DirichletNode2:  "<< nodeIdSet[row] <<std::endl;
+                }
+        //if (DirichletNode &&(row==col))
+          //  z[nodeIdSet[col]] += 0;// 1 * dk[row];
+        /*else*/ if ((DirichletNode) || (DirichletNode2))
+                    z[nodeIdSet[col]] += 0;
+        else
+        {
+                    auto gr            = invJT* gradients[row];
+                    z[nodeIdSet[col]] += detJ/6 * (gc*gr) * dk[nodeIdSet[row]];
+            //std::cout<<"z[nodeIdSet[col]]: "<<z[nodeIdSet[col]]<<std::endl;
+        }
+        //std::cout<<"z["<<nodeIdSet[col]<<"]["<<nodeIdSet[row]<<"]: "<<z[nodeIdSet[col]]<<std::endl;
+        }
+        }
+    }));
+
+    return;
+}
+
+
+template<typename NodeT, typename MeshT, typename PairT, typename BufferT>
+void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT & materialsPerCellId,
+                     BufferT & rowGSM, const std::vector<int> & homDirichletNodes)
+{
+    int nodeID = node.GetTopology().GetIndex(); // global index of node
+    bool DirichletNode = false;
+    if (FindElement(nodeID, homDirichletNodes))
+         DirichletNode = true;
+
+    if (DirichletNode)
+        for (int i = 0; i < 8/*mesh.template GetNumEntities<0>*/; ++i)
+    {
+        if (i == nodeID)
+            rowGSM[i] = 1;
+        else
+            rowGSM[i] = 0;
+    }
+    else
+    {
+        const auto& containing_cells = node.GetTopology().GetAllContainingCells();
+        for (const auto& cell : containing_cells)
+        {
+            const int nrows = dim+1;
+            const auto& gradients = GetGradientsDSL();
+            const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+            // To-Do: find better syntax
+            int localPositionOfNode;
+            for (int i = 0; i < dim+1; ++i)
+                if (nodeIdSet[i] == nodeID)
+                    localPositionOfNode = i;
+
+            auto tmp   = cell.GetGeometry().GetJacobian();
+            float detJ = tmp.Determinant(); detJ = std::abs(detJ);
+            auto inv   = tmp.Invert();
+            auto invJT = inv.Transpose();
+
+            // Material information is integrate as diffusion tensor D = v * I with v as random scalar value.
+            // For example: v = 3 if material id is 1 and v = 6 if material id is 2
+            float value;
+            if (materialsPerCellId[cell.GetTopology().GetIndex()].second == 1)      value = 3;
+            else if (materialsPerCellId[cell.GetTopology().GetIndex()].second == 2) value = 6;
+            else value = 1; // default
+
+            auto gc = invJT * gradients[localPositionOfNode] * value * (detJ/6);
+            for (int row = 0; row < nrows; ++row)
+            {
+        if (FindElement(nodeIdSet[row], homDirichletNodes))
+            rowGSM[nodeIdSet[row]] = 0;
+        else
+        {
+                    auto gr                 = invJT* gradients[row];
+                    rowGSM[nodeIdSet[row]] += gc*gr;
+        }
+            }
+        }
+    }
+
+    //outputVec(rowGSM, "result of matrix free parts", 8);
+    return;
+}
+
+template<typename VectorT>
+float mv(const VectorT & a, const VectorT & b)
+{
+    float m = 0;
+    for (int i = 0; i < a.size(); ++i)
+        m += a[i]*b[i];
+
+    return m;
+}
+
+template<typename VectorT>
+VectorT msv(const float & a, const VectorT & v)
+{
+    VectorT vec; vec.resize(v.size());
+    for (int i = 0; i < v.size(); ++i)
+        vec[i] = a*v[i];
+
+    return vec;
+}
+
+template<typename VectorT>
+VectorT minus(const VectorT & a, const VectorT & b)
+{
+    VectorT vec; vec.resize(a.size());
+    for (int i = 0; i < b.size(); ++i)
+        vec[i] = a[i]-b[i];
+
+    return vec;
+}
+
+template<typename VectorT>
+VectorT plus(const VectorT & a, const VectorT & b)
+{
+    VectorT vec; vec.resize(a.size());
+    for (int i = 0; i < b.size(); ++i)
+        vec[i] = a[i]+b[i];
+
+    return vec;
+}
+
+template<typename BufferT>
+Vector computeXK(const Vector & xk, const BufferT & v1, const float & ak)
+{
+    Vector xkNew; xkNew.resize(xk.size());
+    for (int i = 0; i < xk.size(); ++i)
+    xkNew[i] = xk[i]-(v1[i]*ak);
+    return xkNew;
+}
+
+template<typename BufferT>
+auto convert(const BufferT & rkBuffer) -> Vector
+{
+    Vector c; c.resize(rkBuffer.GetSize());
+    for (int i = 0; i < c.size(); ++i)
+    c[i]=rkBuffer[i];
+    return c;
+}
+
+template<typename BufferT, typename VecT>
+auto convert2(const BufferT & rkBuffer, VecT & rkVec) -> VecT
+{
+    for (int i = 0; i < rkBuffer.GetSize(); ++i)
+        rkVec[i]=rkBuffer[i];
+    return rkVec;
 }
