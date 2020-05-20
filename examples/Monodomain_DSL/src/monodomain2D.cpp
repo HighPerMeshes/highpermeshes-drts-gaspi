@@ -14,7 +14,7 @@
  *                  u(0)    = 1                                                    *
  *                  w(0)    = 0                                                    *
  *                                                                                 *
- * last change: 03.02.2020                                                         *
+ * last change: 20.05.2020                                                         *
  * ------------------------------------------------------------------------------ **/
 
 #ifndef MONODOMAIN_CPP
@@ -25,10 +25,8 @@
 #include <HighPerMeshes.hpp>
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshesDRTS.hpp>
-//#include <HighPerMeshes/GPLStuff.hpp>
 //#include <../../parser/WriteLoop.hpp>
 
-//#include "monodomainFunctions.hpp"
 #include <../examples/Functions/outputWriter.hpp>
 #include <../examples/Functions/simplexGradients.hpp>
 
@@ -40,8 +38,7 @@ using Dofs           = HPM::dataType::Dofs<I...>;
 using Vector         = std::vector<float>;
 using Matrix         = std::vector<Vector>;
 using CoordinateType = HPM::dataType::Vec<float,2>;
-//using Mesh           = HPM::mesh::Mesh<CoordinateType, HPM::entity::Simplex>; //for sequential case
-using Mesh           = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>; //for distributed case
+using Mesh           = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>;
 constexpr int dim    = Mesh::CellDimension;
 
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
@@ -75,27 +72,10 @@ auto UDerivation(const BufferT & u, const MatrixT & Stiffnessmatrix, const Vecto
 template<typename BufferT/*,typename VectorT*/>
 auto WDerivation(const BufferT & u, const BufferT/*VectorT*/ & w, const float & b) -> Vector;
 
-template <typename MatrixT>
-void writeMatrixToMatlab(MatrixT const& mat, std::string const& basename);
-
-template <typename MeshT, typename T>
-void writeVTKOutput(const MeshT & mesh, std::string const & filename, T result, std::string const nameOfResult);
-
-template <typename MeshT, typename T>
-void writeVTKOutput2DTime(const MeshT & mesh, std::string const & filename, T result, std::string const nameOfResult);
-
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
-    // sequential case
-//    HPM::drts::Runtime hpm { HPM::GetBuffer{} };
-//    HPM::SequentialDispatcher body;
-//    HPM::auxiliary::ConfigParser CFG("config.cfg");
-//    std::string meshFile = CFG.GetValue<std::string>("MeshFile");
-//    const Mesh mesh = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader>(meshFile);
-
-    // distrubuted case
     HPM::drts::Runtime<HPM::GetDistributedBuffer<>, HPM::UsingDistributedDevices> hpm({}, std::forward_as_tuple(argc, argv));
     HPM::DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
     HPM::auxiliary::ConfigParser CFG("config.cfg");
@@ -105,8 +85,8 @@ int main(int argc, char** argv)
 
 
     /*------------------------------------------(2) Create monodomain problem ---------------------------------------------------------------------------------*/
-    int numIt   = 20000;
-    float h     = 0.01;
+    int numIt   = 2000;
+    float h     = 0.02;
     float a     = 0.3;
     float b     = 0.7;
     float sigma = 1;
@@ -172,11 +152,11 @@ int main(int argc, char** argv)
         ExplEuler(w, w_deriv, h);
         setStartVector(mesh, w, 0, 0, maxX, maxY, body);
 
-        if ((j+1)%100 == 0)
+        if ((j+1)%10 == 0)
         {
             std::stringstream s;
             s << j+1;
-            std::string name = "A_test_n1_d1_WithoutW_" + s.str();
+            std::string name = "C_test_n1_d1_WithoutW_" + s.str();
             writeVTKOutput2DTime(mesh, name, u, "resultU");
         }
     }
@@ -412,323 +392,4 @@ void testLumpedVec(const VectorT & lumpedM, const float & tol)
         std::cout << "Ratio of lumping Massmatrix is:  " << val << ". Ratio could be too small!" << std::endl;
 
     return;
-}
-
-//!
-//! \brief Creates a matlab file including the matrix mat.
-//!
-//! \param mat
-//! \param basename
-//!
-template <typename MatrixT>
-void writeMatrixToMatlab(MatrixT const& mat, std::string const& basename)
-{
-  std::string fname = basename + ".m";
-  std::ofstream f(fname.c_str());
-
-  f << "function [A] = " << basename << '\n'
-      << " A = [\n";
-
-  for (size_t i=0; i<mat.size(); ++i)
-  {
-      for (size_t j=0; j<mat[0].size(); ++j)
-         f << mat[i][j] << ' ';
-      f << '\n';
-  }
-  f << "];\nA = A';\n";
-
-  std::cout<<"Write matrix information to file "<<basename<<std::endl;
-}
-
-//!
-//! \brief Creates a vtk file
-//!
-//! \param mesh
-//! \param filename
-//! \param result
-//! \param nameOfResult
-//!
-template <typename MeshT, typename T>
-void writeVTKOutput(const MeshT & mesh, std::string const & filename, T result, std::string const nameOfResult)
-{
-    int numNodes = mesh.template GetNumEntities<0>();
-    int numberOfCells  = mesh.template GetNumEntities<dim>();
-    int cellType;
-    if (dim == 3)
-        cellType = 10; // tetrahedrons
-    else if (dim == 2)
-        cellType = 5; // triangles
-    else
-        cellType = 3; // line
-
-    std::string fname = filename + ".vtu";
-    std::ofstream f(fname.c_str());
-
-    f << "<?xml version=\"1.0\"?>" << '\n'
-      << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">" << '\n'
-      << "  <UnstructuredGrid>" << '\n'
-      << "      <Piece NumberOfPoints=\"" << numNodes << "\" NumberOfCells=\"" << numberOfCells << "\">" << '\n'
-      << "          <Points>" << '\n'
-      << "              <DataArray type=\"Float32\" Name=\"Coordinates\" NumberOfComponents=\""<<dim+(3-dim)<<"\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add node coordinates to file
-    for (const auto& node : mesh.template GetEntities<0>() )
-    {
-        auto nodeCoords = node.GetTopology().GetVertices();
-        int nodeID      = node.GetTopology().GetIndex();
-        for (int j = 0; j < dim+1; ++j)
-        {
-            if (j < dim)
-                f << nodeCoords[0][j] << ' ';
-            else
-                f << 0 << ' ';
-        }
-        if (((dim+1)*(nodeID+1)) % 12 == 0)
-            f << '\n';
-        if ((((dim+1)*(nodeID+1)) % 12 == 0) && (nodeID+1)!=numNodes)
-            f << "              ";
-    }
-
-    if (((dim+1)*(numNodes)) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "          </Points>" << '\n'
-      << "          <Cells>" << '\n'
-      << "              <DataArray type=\"Int32\" Name=\"connectivity\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add cell information (nodes of each cell using node id)
-    int numNodesPerCell;
-    bool setInfo = false;
-    for (const auto& cell : mesh.template GetEntities<dim>() )
-    {
-        auto nodeIDs = cell.GetTopology().GetNodeIndices();
-        int  cellID  = cell.GetTopology().GetIndex();
-        if (!setInfo)
-        {
-            numNodesPerCell = nodeIDs.size();
-            setInfo = true;
-        }
-        for (int j = 0; j < nodeIDs.size(); ++j)
-            f << nodeIDs[j] << ' ';
-        if ((numNodesPerCell*(cellID+1)) % 12 == 0)
-            f << '\n';
-        if ((numNodesPerCell*(cellID+1) % 12 == 0) && (cellID+1)!=numberOfCells)
-            f << "              ";
-    }
-
-    if ((numNodesPerCell*(numberOfCells)) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "              <DataArray type=\"Int32\" Name=\"offsets\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add cell information (connectivity -> each cell consists of certain nodes)
-    for (int i = 0; i < numberOfCells; ++i)
-    {
-        f << (i+1)*numNodesPerCell << ' ';
-        if ((i+1) % 12 == 0)
-            f << '\n';
-        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
-            f << "              ";
-    }
-
-    if ((numberOfCells+1) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "              <DataArray type=\"UInt8\" Name=\"types\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add cell information (connectivity -> each cell consists of certain nodes)
-    for (int i = 0; i < numberOfCells; ++i)
-    {
-        f << cellType << ' ';
-        if ((i+1) % 12 == 0)
-            f << '\n';
-        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
-            f << "              ";
-    }
-
-    if ((numberOfCells+1) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "          </Cells>" << '\n'
-      << "          <CellData>" << '\n'
-      << "          </CellData>" << '\n'
-      << "          <PointData Scalars=\""<<nameOfResult<<"\">" << '\n'
-      << "              <DataArray type=\"Float64\" Name=\""<<nameOfResult<<"\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    for (int i = 0; i < numNodes; i++)
-    {
-        f << result[i] << ' ';
-
-        if ((i+1)%12==0)
-            f << '\n';
-        if ((i+1) % 12 == 0 && (i+1)!=numNodes)
-            f << "              ";
-    }
-
-    if (numNodes % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "          </PointData>" << '\n'
-      << "      </Piece>" << '\n'
-      << "  </UnstructuredGrid>" << '\n'
-      << "</VTKFile>" << '\n';
-
-    std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
-}
-
-
-//!
-//! \brief Creates a vtk file, with t as z-axis
-//!
-//! \param mesh
-//! \param filename
-//! \param result
-//! \param nameOfResult
-//!
-template <typename MeshT, typename T>
-void writeVTKOutput2DTime(const MeshT & mesh, std::string const & filename, T result, std::string const nameOfResult)
-{
-    int numNodes = mesh.template GetNumEntities<0>();
-    int numberOfCells  = mesh.template GetNumEntities<dim>();
-    int cellType;
-    if (dim == 3)
-        cellType = 10; // tetrahedrons
-    else if (dim == 2)
-        cellType = 5; // triangles
-    else
-        cellType = 3; // line
-
-    std::string fname = filename + ".vtu";
-    std::ofstream f(fname.c_str());
-
-    f << "<?xml version=\"1.0\"?>" << '\n'
-      << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">" << '\n'
-      << "  <UnstructuredGrid>" << '\n'
-      << "      <Piece NumberOfPoints=\"" << numNodes << "\" NumberOfCells=\"" << numberOfCells << "\">" << '\n'
-      << "          <Points>" << '\n'
-      << "              <DataArray type=\"Float32\" Name=\"Coordinates\" NumberOfComponents=\""<<dim+(3-dim)<<"\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add node coordinates to file
-    for (const auto& node : mesh.template GetEntities<0>() )
-    {
-        auto nodeCoords = node.GetTopology().GetVertices();
-        int nodeID      = node.GetTopology().GetIndex();
-        for (int j = 0; j < dim+1; ++j)
-        {
-            if (j < dim)
-                f << nodeCoords[0][j] << ' ';
-            else
-                f << result[nodeID] << ' ';
-        }
-        if (((dim+1)*(nodeID+1)) % 12 == 0)
-            f << '\n';
-        if ((((dim+1)*(nodeID+1)) % 12 == 0) && (nodeID+1)!=numNodes)
-            f << "              ";
-    }
-
-    if (((dim+1)*(numNodes)) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "          </Points>" << '\n'
-      << "          <Cells>" << '\n'
-      << "              <DataArray type=\"Int32\" Name=\"connectivity\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add cell information (nodes of each cell using node id)
-    int numNodesPerCell;
-    bool setInfo = false;
-    for (const auto& cell : mesh.template GetEntities<dim>() )
-    {
-        auto nodeIDs = cell.GetTopology().GetNodeIndices();
-        int  cellID  = cell.GetTopology().GetIndex();
-        if (!setInfo)
-        {
-            numNodesPerCell = nodeIDs.size();
-            setInfo = true;
-        }
-        for (int j = 0; j < nodeIDs.size(); ++j)
-            f << nodeIDs[j] << ' ';
-        if ((numNodesPerCell*(cellID+1)) % 12 == 0)
-            f << '\n';
-        if ((numNodesPerCell*(cellID+1) % 12 == 0) && (cellID+1)!=numberOfCells)
-            f << "              ";
-    }
-
-    if ((numNodesPerCell*(numberOfCells)) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "              <DataArray type=\"Int32\" Name=\"offsets\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add cell information (connectivity -> each cell consists of certain nodes)
-    for (int i = 0; i < numberOfCells; ++i)
-    {
-        f << (i+1)*numNodesPerCell << ' ';
-        if ((i+1) % 12 == 0)
-            f << '\n';
-        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
-            f << "              ";
-    }
-
-    if ((numberOfCells+1) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "              <DataArray type=\"UInt8\" Name=\"types\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    //add cell information (connectivity -> each cell consists of certain nodes)
-    for (int i = 0; i < numberOfCells; ++i)
-    {
-        f << cellType << ' ';
-        if ((i+1) % 12 == 0)
-            f << '\n';
-        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
-            f << "              ";
-    }
-
-    if ((numberOfCells+1) % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "          </Cells>" << '\n'
-      << "          <CellData>" << '\n'
-      << "          </CellData>" << '\n'
-      << "          <PointData Scalars=\""<<nameOfResult<<"\">" << '\n'
-      << "              <DataArray type=\"Float64\" Name=\""<<nameOfResult<<"\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
-      << "              ";
-
-    for (int i = 0; i < numNodes; i++)
-    {
-        f << result[i] << ' ';
-
-        if ((i+1)%12==0)
-            f << '\n';
-        if ((i+1) % 12 == 0 && (i+1)!=numNodes)
-            f << "              ";
-    }
-
-    if (numNodes % 12 != 0)
-        f << '\n';
-
-    f << "              </DataArray>" << '\n'
-      << "          </PointData>" << '\n'
-      << "      </Piece>" << '\n'
-      << "  </UnstructuredGrid>" << '\n'
-      << "</VTKFile>" << '\n';
-
-    std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
 }
