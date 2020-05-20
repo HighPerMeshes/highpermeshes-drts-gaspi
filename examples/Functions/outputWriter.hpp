@@ -74,6 +74,32 @@ void outputMat(const MatT & mat, const std::string & name,
 }
 
 //!
+//! \brief Creates a matlab file including the matrix mat.
+//!
+//! \param mat
+//! \param basename
+//!
+template <typename MatrixT>
+void writeMatrixToMatlab(MatrixT const& mat, std::string const& basename)
+{
+  std::string fname = basename + ".m";
+  std::ofstream f(fname.c_str());
+
+  f << "function [A] = " << basename << '\n'
+      << " A = [\n";
+
+  for (size_t i=0; i<mat.size(); ++i)
+  {
+      for (size_t j=0; j<mat[0].size(); ++j)
+         f << mat[i][j] << ' ';
+      f << '\n';
+  }
+  f << "];\nA = A';\n";
+
+  std::cout<<"Write matrix information to file "<<basename<<std::endl;
+}
+
+//!
 //! \brief Creates a vtk file
 //!
 //! \param mesh
@@ -234,20 +260,19 @@ void writeVTKOutput(const MeshT & mesh, std::string const & filename, const Vect
     std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
 }
 
-
 //!
-//! \brief  Output of vtk file (without parser / distributed case).
+//! \brief Creates a vtk file, with t as z-axis
 //!
 //! \param mesh
 //! \param filename
-//! \param resultVec
-//! \param nameOfResultVec
-//! \param homDirichletNodes
+//! \param result
+//! \param nameOfResult
 //!
-/*template <typename MeshT, typename VectorT, typename Runtime>
-void writeVTKOutput(const MeshT & mesh, std::string const & filename, const VectorT& resultVec, std::string const nameOfResultVec,
-                    std::vector<int> homDirichletNodes, const Runtime& rt)
+template <typename MeshT, typename T>
+void writeVTKOutput2DTime(const MeshT & mesh, std::string const & filename, const T & result, std::string const nameOfResult)
 {
+    constexpr int dim = MeshT::CellDimension;
+
     int numNodes = mesh.template GetNumEntities<0>();
     int numberOfCells  = mesh.template GetNumEntities<dim>();
     int cellType;
@@ -266,7 +291,7 @@ void writeVTKOutput(const MeshT & mesh, std::string const & filename, const Vect
       << "  <UnstructuredGrid>" << '\n'
       << "      <Piece NumberOfPoints=\"" << numNodes << "\" NumberOfCells=\"" << numberOfCells << "\">" << '\n'
       << "          <Points>" << '\n'
-      << "              <DataArray type=\"Float64\" Name=\"Coordinates\" NumberOfComponents=\""<<dim<<"\" format=\"ascii\">" << '\n'
+      << "              <DataArray type=\"Float32\" Name=\"Coordinates\" NumberOfComponents=\""<<dim+(3-dim)<<"\" format=\"ascii\">" << '\n'
       << "              ";
 
     //add node coordinates to file
@@ -274,15 +299,20 @@ void writeVTKOutput(const MeshT & mesh, std::string const & filename, const Vect
     {
         auto nodeCoords = node.GetTopology().GetVertices();
         int nodeID      = node.GetTopology().GetIndex();
-        for (int j = 0; j < dim; ++j)
-            f << nodeCoords[0][j] << ' ';
-        if ((dim*(nodeID+1)) % 12 == 0)
+        for (int j = 0; j < dim+1; ++j)
+        {
+            if (j < dim)
+                f << nodeCoords[0][j] << ' ';
+            else
+                f << result[nodeID] << ' ';
+        }
+        if (((dim+1)*(nodeID+1)) % 12 == 0)
             f << '\n';
-        if (((dim*(nodeID+1)) % 12 == 0) && (nodeID+1)!=numNodes)
+        if ((((dim+1)*(nodeID+1)) % 12 == 0) && (nodeID+1)!=numNodes)
             f << "              ";
     }
 
-    if ((dim*(numNodes)) % 12 != 0)
+    if (((dim+1)*(numNodes)) % 12 != 0)
         f << '\n';
 
     f << "              </DataArray>" << '\n'
@@ -352,35 +382,19 @@ void writeVTKOutput(const MeshT & mesh, std::string const & filename, const Vect
       << "          </Cells>" << '\n'
       << "          <CellData>" << '\n'
       << "          </CellData>" << '\n'
-      << "          <PointData Scalars=\""<<nameOfResultVec<<"\">" << '\n'
-      << "              <DataArray type=\"Float64\" Name=\""<<nameOfResultVec<<"\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "          <PointData Scalars=\""<<nameOfResult<<"\">" << '\n'
+      << "              <DataArray type=\"Float64\" Name=\""<<nameOfResult<<"\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
       << "              ";
 
-    int counterA = 0;
-    int counterB = 0;
-    const int id = rt.gaspi_runtime.rank().get();
-    std::cout << "Size: " << resultVec.size() << std::endl;
-    if (homDirichletNodes.size() != 0)
-        for (int i = 0; i < numNodes; i++)
-        {
-            if (homDirichletNodes[counterA] == i)
-            {
-                f << 0.0 << ' ';
-                ++counterA;
-            }
-            else
-            {
-                double val = resultVec.at(counterB);
-                std::cout<<"resultVec:   "<<id<<":"<<val<<std::endl;
-                f << id <<":"<<val << ' ';
-                ++counterB;
-            }
+    for (int i = 0; i < numNodes; i++)
+    {
+        f << result[i] << ' ';
 
-            if ((i+1)%12==0)
-                f << '\n';
-            if ((i+1) % 12 == 0 && (i+1)!=numNodes)
-                f << "              ";
-        }
+        if ((i+1)%12==0)
+            f << '\n';
+        if ((i+1) % 12 == 0 && (i+1)!=numNodes)
+            f << "              ";
+    }
 
     if (numNodes % 12 != 0)
         f << '\n';
@@ -392,4 +406,4 @@ void writeVTKOutput(const MeshT & mesh, std::string const & filename, const Vect
       << "</VTKFile>" << '\n';
 
     std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
-}*/
+}
