@@ -73,6 +73,167 @@ void outputMat(const MatT & mat, const std::string & name,
     return;
 }
 
+//!
+//! \brief Creates a vtk file
+//!
+//! \param mesh
+//! \param filename
+//! \param resultVec
+//! \param nameOfResultVec
+//! \param homDirichletNodes
+//!
+template <typename MeshT, typename VectorT, typename Runtime>
+void writeVTKOutput(const MeshT & mesh, std::string const & filename, const VectorT& resultVec, std::string const nameOfResultVec,
+                    std::vector<int> homDirichletNodes, const Runtime& rt)
+{
+    constexpr int dim = MeshT::CellDimension;
+
+    int numNodes = mesh.template GetNumEntities<0>();
+    int numberOfCells  = mesh.template GetNumEntities<dim>();
+    int cellType;
+    if (dim == 3)
+        cellType = 10; // tetrahedrons
+    else if (dim == 2)
+        cellType = 5; // triangles
+    else
+        cellType = 3; // line
+
+    std::string fname = filename + ".vtu";
+    std::ofstream f(fname.c_str());
+
+    f << "<?xml version=\"1.0\"?>" << '\n'
+      << "<VTKFile type=\"UnstructuredGrid\" version=\"0.1\" byte_order=\"LittleEndian\">" << '\n'
+      << "  <UnstructuredGrid>" << '\n'
+      << "      <Piece NumberOfPoints=\"" << numNodes << "\" NumberOfCells=\"" << numberOfCells << "\">" << '\n'
+      << "          <Points>" << '\n'
+      << "              <DataArray type=\"Float64\" Name=\"Coordinates\" NumberOfComponents=\""<<dim<<"\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add node coordinates to file
+    for (const auto& node : mesh.template GetEntities<0>() )
+    {
+        auto nodeCoords = node.GetTopology().GetVertices();
+        int nodeID      = node.GetTopology().GetIndex();
+        for (int j = 0; j < dim; ++j)
+            f << nodeCoords[0][j] << ' ';
+        if ((dim*(nodeID+1)) % 12 == 0)
+            f << '\n';
+        if (((dim*(nodeID+1)) % 12 == 0) && (nodeID+1)!=numNodes)
+            f << "              ";
+    }
+
+    if ((dim*(numNodes)) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "          </Points>" << '\n'
+      << "          <Cells>" << '\n'
+      << "              <DataArray type=\"Int32\" Name=\"connectivity\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add cell information (nodes of each cell using node id)
+    int numNodesPerCell;
+    bool setInfo = false;
+    for (const auto& cell : mesh.template GetEntities<dim>() )
+    {
+        auto nodeIDs = cell.GetTopology().GetNodeIndices();
+        int  cellID  = cell.GetTopology().GetIndex();
+        if (!setInfo)
+        {
+            numNodesPerCell = nodeIDs.size();
+            setInfo = true;
+        }
+        for (int j = 0; j < nodeIDs.size(); ++j)
+            f << nodeIDs[j] << ' ';
+        if ((numNodesPerCell*(cellID+1)) % 12 == 0)
+            f << '\n';
+        if ((numNodesPerCell*(cellID+1) % 12 == 0) && (cellID+1)!=numberOfCells)
+            f << "              ";
+    }
+
+    if ((numNodesPerCell*(numberOfCells)) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "              <DataArray type=\"Int32\" Name=\"offsets\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add cell information (connectivity -> each cell consists of certain nodes)
+    for (int i = 0; i < numberOfCells; ++i)
+    {
+        f << (i+1)*numNodesPerCell << ' ';
+        if ((i+1) % 12 == 0)
+            f << '\n';
+        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
+            f << "              ";
+    }
+
+    if ((numberOfCells+1) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "              <DataArray type=\"UInt8\" Name=\"types\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    //add cell information (connectivity -> each cell consists of certain nodes)
+    for (int i = 0; i < numberOfCells; ++i)
+    {
+        f << cellType << ' ';
+        if ((i+1) % 12 == 0)
+            f << '\n';
+        if ((i+1) % 12 == 0 && (i+1)!=numberOfCells)
+            f << "              ";
+    }
+
+    if ((numberOfCells+1) % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "          </Cells>" << '\n'
+      << "          <CellData>" << '\n'
+      << "          </CellData>" << '\n'
+      << "          <PointData Scalars=\""<<nameOfResultVec<<"\">" << '\n'
+      << "              <DataArray type=\"Float64\" Name=\""<<nameOfResultVec<<"\" NumberOfComponents=\"1\" format=\"ascii\">" << '\n'
+      << "              ";
+
+    int counterA = 0;
+    int counterB = 0;
+    const int id = rt.gaspi_runtime.rank().get();
+    std::cout << "Size: " << resultVec.size() << std::endl;
+    if (homDirichletNodes.size() != 0)
+        for (int i = 0; i < numNodes; i++)
+        {
+            if (homDirichletNodes[counterA] == i)
+            {
+                f << 0.0 << ' ';
+                ++counterA;
+            }
+            else
+            {
+                double val = resultVec.at(counterB);
+                std::cout<<"resultVec:   "<<id<<":"<<val<<std::endl;
+                f << id <<":"<<val << ' ';
+                ++counterB;
+            }
+
+            if ((i+1)%12==0)
+                f << '\n';
+            if ((i+1) % 12 == 0 && (i+1)!=numNodes)
+                f << "              ";
+        }
+
+    if (numNodes % 12 != 0)
+        f << '\n';
+
+    f << "              </DataArray>" << '\n'
+      << "          </PointData>" << '\n'
+      << "      </Piece>" << '\n'
+      << "  </UnstructuredGrid>" << '\n'
+      << "</VTKFile>" << '\n';
+
+    std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
+}
+
 
 //!
 //! \brief  Output of vtk file (without parser / distributed case).
