@@ -67,11 +67,11 @@ auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDsl
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecT>
 void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT & x, const int & numSolverIt, const float & tol);
 
-template<typename BufferT, typename VecT>
-auto Convert(const BufferT & rkBuffer, VecT & rkVec) -> VecT;
+//template<typename BufferT, typename VecT>
+//auto Convert(const BufferT & rkBuffer, VecT & rkVec) -> VecT;
 
-template<typename BufferT>
-auto Convert2(const BufferT & rkBuffer) -> Vector;
+//template<typename BufferT>
+//auto Convert2(const BufferT & rkBuffer) -> Vector;
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -338,21 +338,4 @@ void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT 
 }
 
 
-/*-------------------------------------type converters--------------------------*/
-template<typename BufferT, typename VecT>
-auto Convert(const BufferT & rkBuffer, VecT & rkVec) -> VecT
-{
-    for (int i = 0; i < rkBuffer.GetSize(); ++i)
-        rkVec[i]=rkBuffer[i];
-    return rkVec;
-}
-
-template<typename BufferT>
-auto Convert2(const BufferT & rkBuffer) -> Vector
-{
-    Vector c; c.resize(rkBuffer.GetSize());
-    for (int i = 0; i < c.size(); ++i)
-    c[i]=rkBuffer[i];
-    return c;
-}
 

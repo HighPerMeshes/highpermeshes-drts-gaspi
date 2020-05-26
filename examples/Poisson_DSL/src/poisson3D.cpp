@@ -101,15 +101,6 @@ template<typename NodeT, typename MeshT, typename PairT, typename BufferT>
 void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT & materialsPerCellId,
                              BufferT & rowGSM, const std::vector<int> & homDirichletNodes);
 
-template<typename BufferT>
-Vector computeXK(const Vector & xk, const BufferT & v1, const float & ak);
-
-template<typename BufferT>
-auto convert(const BufferT & rkBuffer) -> Vector;
-
-template<typename BufferT, typename VecT>
-auto convert2(const BufferT & rkBuffer, VecT & rkVec) -> VecT;
-
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
@@ -130,7 +121,6 @@ int main(int argc, char** argv)
     /*------------------------------------------(1) Read mesh information: ------------------------------------------------------------------------------------*/
     HPM::auxiliary::ConfigParser CFG("config.cfg");
     std::string meshFile = CFG.GetValue<std::string>("MeshFile");
-    std::cout<<"hallo"<<std::endl;
     const Mesh mesh      = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
                                          (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
     ReaderType reader;
@@ -646,41 +636,32 @@ BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, 
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
 auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, const int & numSolverIt, const float & tol,const std::vector<int> & homDirichletNodes)->Vector
 {
-    Vector xk {0,0,0,0,0,0,0,0}; //start vector
-    auto rkBuffer = rhs;//GetResiduum(mesh, rhs, bodyObj, materials, xk); // set residuum
-    Vector rk     = convert(rkBuffer);
-    Vector dk     = rk; //search direction
-    int k         = 0;
+    Vector x {0,0,0,0,0,0,0,0}; //start vector
+    auto rBuffer = rhs; // set residuum
+    Vector r     = Convert2(rBuffer);
+    Vector d     = r; //search direction
+    float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
+    
     bool abortCriterium = false;
 
-    //while ((k < numSolverIt) || (abortCriterium == true))
     for (int i = 0; i < numSolverIt; ++i)
     {
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
-        //computeMatrixVecProdukt(mesh, dk, bodyObj, materials, zBuffer);
-        computeMatrixVecProdukt(mesh, dk, bodyObj, materials, zBuffer, homDirichletNodes);
-        Vector z     = convert(zBuffer);
-    for (int i = 0; i < zBuffer.GetSize();++i)
-            std::cout<<"z_"<<i<<"  =  "<<zBuffer[i]<<std::endl;
-    std::cout<<"rk*rk:  "<<mv(rk,rk)<<std::endl;
-    std::cout<<"dk*z:  "<<mv(dk,z)<<std::endl;
-    float ak     = mv(rk,rk)/mv(dk,z);//multiplyBuffer(rk, rk)/multiplyBuffer(dk, z);
-    std::cout<<"ak:  "<<ak<<std::endl;
-    xk           = computeXK(xk, dk, ak);//plus(xk, multiplyScalarWithBuffer(dk, ak));
-    for (int i = 0; i < 8;++i)
-            std::cout<<"xk_"<<i<<"  =  "<<xk[i]<<std::endl;
-    auto rkOld   = rk;
-    rk           = minus(rk, msv(ak,z));//minus(rk, multiplyScalarWithBuffer(z, ak));
-    float bk     = mv(rk,rk)/mv(rkOld,rkOld);//multiplyBuffer(rk, rk)/multiplyBuffer(rkOld, rkOld);
-        dk           = plus(rk,msv(bk,dk));//plus(multiplyScalarWithBuffer(dk, bk), rk);
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
+        computeMatrixVecProdukt(mesh, d, bodyObj, materials, zBuffer, homDirichletNodes);
+        
+	Vector z = Convert2(zBuffer);
+	r_scPr   = mv(r,r);
+        a        = r_scPr/mv(d,z);
+        x        = plus(x,msv(a,d));
+        r        = minus(r, msv(a,z));
+        b        = mv(r,r)/r_scPr;
+        d        = plus(r,msv(b,d));
 
-        if (std::sqrt(mv(rk, rk)) < tol)
-        //abortCriterium = true;
-        i = numSolverIt;
-
-        //++k;
+	eps = std::sqrt(mv(r, r));
+        if (eps < tol)
+            i = numSolverIt;
     }
-    return xk;
+    return x;
 }
 
 
@@ -688,47 +669,29 @@ template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, t
 auto cgSolverMatFree(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, VecDslT & x, const int & numSolverIt,
                      const float & tol, const std::vector<int> & homDirichletNodes)->VecDslT
 {
-    for (int i = 0; i < homDirichletNodes.size(); ++i)
-        std::cout<<"homNode:  "<<homDirichletNodes[i]<<std::endl;
     int const size = 8;
     using VecDSL = HPM::dataType::Vec<float,size>;
+    float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rBuffer(mesh);
     GetMatrixVecProduct(mesh, x, bodyObj, materials, rBuffer, homDirichletNodes);//A*x
 
-    VecDSL r;
-    for (int j = 0; j < size; ++j)
-    {
-        r[j] = rhs[j]-rBuffer[j];
-        std::cout<<"r_"<<j<<"  =  "<<r[j]<<std::endl;
-    }
-    VecDSL d     = r; //search direction
-    float r_scPr = 0; float a = 0; float b = 0;
+    VecDSL r; Convert(rhs,r);
+    VecDSL d = r; //search direction
 
     for (int it = 0; it < numSolverIt; ++it)
     {
-        std::cout<<"-----------------------------------"<<it<<"---------------------------------"<<std::endl;
         HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
         GetMatrixVecProduct(mesh, d, bodyObj, materials, zBuffer, homDirichletNodes);// A*d
-        VecDSL z; convert2(zBuffer, z);
-        for (int i = 0; i < zBuffer.GetSize();++i)
-            std::cout<<"z_"<<i<<"  =  "<<zBuffer[i]<<std::endl;
-        for (int i = 0; i < 8;++i)
-            std::cout<<"r_"<<i<<"  =  "<<r[i]<<std::endl;
-        r_scPr = r * r; // r_k scalar product
-        std::cout<<"r_scPr: "<<r_scPr<<std::endl;
-        float dz = d*z;
-        std::cout<<"d*z: "<<dz<<std::endl;
-        a      = r_scPr/(d*z);//mv(rk,rk)/mv(dk,z);//multiplyBuffer(rk, rk)/multiplyBuffer(dk, z);
-        std::cout<<"a:  "<<a<<std::endl;
-        x      = x + (a*d);//computeXK(xk, dk, ak);//plus(xk, multiplyScalarWithBuffer(dk, ak));
-        for (int i = 0; i < 8;++i)
-            std::cout<<"x_"<<i<<"  =  "<<x[i]<<std::endl;
-        r      = r - (a*z); // minus(rk, msv(ak,z));//minus(rk, multiplyScalarWithBuffer(z, ak));
-        b      = (r*r)/r_scPr;//mv(rk,rk)/mv(rkOld,rkOld);//multiplyBuffer(rk, rk)/multiplyBuffer(rkOld, rkOld);
-        d      = r + (b * d);//plus(rk,msv(bk,dk));//plus(multiplyScalarWithBuffer(dk, bk), rk);
+        VecDSL z; Convert(zBuffer, z);
+        r_scPr = r * r;
+        a      = r_scPr/(d*z);
+        x      = x + (a*d);
+        r      = r - (a*z); 
+        b      = (r*r)/r_scPr;
+        d      = r + (b * d);
 
-        float eps = std::sqrt(r * r);
+        eps = std::sqrt(r * r);
         if (eps < tol)
             it = numSolverIt;
 
@@ -877,28 +840,3 @@ void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT &
     return;
 }
 
-template<typename BufferT>
-Vector computeXK(const Vector & xk, const BufferT & v1, const float & ak)
-{
-    Vector xkNew; xkNew.resize(xk.size());
-    for (int i = 0; i < xk.size(); ++i)
-    xkNew[i] = xk[i]-(v1[i]*ak);
-    return xkNew;
-}
-
-template<typename BufferT>
-auto convert(const BufferT & rkBuffer) -> Vector
-{
-    Vector c; c.resize(rkBuffer.GetSize());
-    for (int i = 0; i < c.size(); ++i)
-    c[i]=rkBuffer[i];
-    return c;
-}
-
-template<typename BufferT, typename VecT>
-auto convert2(const BufferT & rkBuffer, VecT & rkVec) -> VecT
-{
-    for (int i = 0; i < rkBuffer.GetSize(); ++i)
-        rkVec[i]=rkBuffer[i];
-    return rkVec;
-}
