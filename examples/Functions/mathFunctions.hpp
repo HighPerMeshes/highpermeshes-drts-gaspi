@@ -89,3 +89,70 @@ auto plus(const VectorT1 & a, const VectorT2 & b) -> VectorT1
 
     return vec;
 }
+
+
+//!
+//! matrix-vector product split into single scalar operations
+//!
+/*template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
+void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer)
+{
+    auto cells { mesh.template GetEntityRange<3>() };
+    bodyObj.Execute(HPM::ForEachEntity(
+                  cells,
+                  std::tuple(ReadWrite(Node(sBuffer))),
+                  [&](auto const& cell, const auto& iter, auto& lvs)
+    {
+        constexpr int nrows = dim+1;
+        constexpr int ncols = dim+1;
+        const auto& gradients = GetGradientsDSL();
+        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+        const auto& tmp  = cell.GetGeometry().GetJacobian();
+        const float detJ = std::abs(tmp.Determinant());
+
+        // store detJ information beforehand
+        const auto _detJ = [&]() {
+                ::HPM::dataType::Matrix<float, nrows, ncols> matrix;
+                for (int col = 0; col < ncols; ++col)
+                {
+                    for (int row = 0; row < nrows; ++row)
+                    {
+                        matrix[row][col] = (col == row ? detJ / 60.0 : detJ / 120.0);
+                    }
+                }
+                return matrix;
+            }();
+
+        const auto& inv   = tmp.Invert();
+        const auto& invJT = inv.Transpose();
+
+        // sigma: random scalar value
+        float sigma = 2;
+
+        // separate GATHER
+        std::array<float, nrows> _d;
+        for (int row = 0; row < nrows; ++row)
+            _d[row] = d[nodeIdSet[row]];
+
+        // accumulate into contiguous block of memory
+        std::array<float, ncols> result{};
+
+	 for (int col = 0; col < ncols; ++col)
+        {
+            const auto& gc = invJT * gradients[col] * sigma * (detJ/6);
+            for (int row = 0; row < nrows; ++row)
+            {
+                float val      = _detJ[row][col];
+                const auto& gr = invJT * gradients[row];
+                result[col]   += ((gc*gr) + val) * _d[row];
+            }
+        }
+
+        // separate SCATTER (accumulate)
+        for (int col = 0; col < ncols; ++col)
+            sBuffer[nodeIdSet[col]] += result[col];
+    }));
+
+    return;
+}*/

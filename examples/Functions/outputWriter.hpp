@@ -407,3 +407,26 @@ void writeVTKOutput2DTime(const MeshT & mesh, std::string const & filename, cons
 
     std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
 }
+
+//!
+//! \brief convert buffer type to vec type
+//!
+template<typename BufferT, typename VecT>
+auto Convert(const BufferT & rkBuffer, VecT & rkVec) -> VecT
+{
+    for (int i = 0; i < rkBuffer.GetSize(); ++i)
+        rkVec[i]=rkBuffer[i];
+    return rkVec;
+}
+
+//!
+//! \brief convert buffer type to std::vector
+//!
+template<typename BufferT>
+auto Convert2(const BufferT & rkBuffer) -> std::vector<float>
+{
+    std::vector<float> c; c.resize(rkBuffer.GetSize());
+    for (int i = 0; i < c.size(); ++i)
+    c[i]=rkBuffer[i];
+    return c;
+}
