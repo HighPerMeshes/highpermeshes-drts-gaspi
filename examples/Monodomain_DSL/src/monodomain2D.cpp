@@ -51,6 +51,9 @@ auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, S
 template<typename MeshT, typename LoopBodyT>
 auto getLumpedMassmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj) -> Vector;
 
+template<typename MeshT, typename LoopBodyT, typename BufferT>
+void GetLumpedMassmatrix2(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat) ;
+
 template<typename VectorT>
 void testLumpedVec(const VectorT & lumpedM, const float & tol);
 
@@ -114,8 +117,16 @@ int main(int argc, char** argv)
     Vector f_i;
 
     Vector lumpedM      = getLumpedMassmatrix(mesh, outputOpt, body);
+    outputVec(lumpedM,"Ml_old", lumpedM.size());
+
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
+    GetLumpedMassmatrix2(mesh, body, lumpedMat);
+    outputVec(lumpedMat,"Ml_new", lumpedMat.GetSize());
+
+    /*
     float tol           = 0.1;
     testLumpedVec(lumpedM, tol);
+
 
     Matrix A            = getStiffnessmatrix(mesh, false, body, sigma);
 
@@ -143,7 +154,7 @@ int main(int argc, char** argv)
             writeVTKOutput2DTime(mesh, name, u, "resultU");
         }
     }
-
+    */
     return 0;
 }
 #endif
@@ -257,14 +268,61 @@ auto getLumpedMassmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj) 
                     localMatrices[row][col] += detJ * 1/24;
             }
 
-        if (optOutput)
-            outputMat(localMatrices, "Local matrix per tetraeder",dim+1,dim+1);
-
         assembleLumpedVec(lumpedM, localMatrices, nodeIdSet);
     }));
 
     return lumpedM;
 }
+
+
+
+template<typename MeshT, typename LoopBodyT, typename BufferT>
+void GetLumpedMassmatrix2(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat)
+{
+
+    //Vector lumpedM; lumpedM.resize(mesh.template GetNumEntities<0>());
+    auto cells { mesh.template GetEntityRange<2>() };
+
+    bodyObj.Execute(HPM::ForEachEntity(
+                        cells,
+                        std::tuple(ReadWrite(Node(lumpedMat))),
+                        [&](auto const& cell, const auto& iter, auto& lvs)
+    {
+        auto& lumpedMat   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        //const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+        auto tmp              = cell.GetGeometry().GetJacobian();
+        float detJ            = std::abs(tmp.Determinant());
+
+        for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
+        {
+            int id_node1      = node1.GetTopology().GetLocalIndex();
+            for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
+            {
+                if (node2.GetTopology().GetLocalIndex() == id_node1)
+                    lumpedMat[id_node1][0] += detJ/12;
+                else
+                    lumpedMat[id_node1][0] += detJ/24;
+            }
+        }
+
+//        for (int col = 0; col < dim+1; ++col)
+//            for (int row = 0; row < dim+1; ++row)
+//            {
+//                if ( row == col)
+//                    localMatrices[row][col] += detJ * 1/12 ;
+//                else
+//                    localMatrices[row][col] += detJ * 1/24;
+//            }
+
+        //if (optOutput)
+          //  outputMat(localMatrices, "Local matrix per tetraeder",dim+1,dim+1);
+
+        //assembleLumpedVec(lumpedM, localMatrices, nodeIdSet);
+    }));
+
+    return;
+}
+
 
 //!
 //! \brief Create a global matrix by assembling local matrices.
