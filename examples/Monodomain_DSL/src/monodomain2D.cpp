@@ -320,6 +320,8 @@ void GetLumpedMassmatrix2(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpe
         //assembleLumpedVec(lumpedM, localMatrices, nodeIdSet);
     }));
 
+
+
     return;
 }
 
