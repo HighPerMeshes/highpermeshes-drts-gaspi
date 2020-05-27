@@ -105,12 +105,6 @@ int main(int argc, char** argv)
     // Open a file stream for each distributed context
     std::ofstream file { std::string { "OutU0_" } +  std::to_string(hpm.gaspi_context.rank().get()) + ".txt" };
     auto AllNodes { mesh.GetEntityRange<0>() } ;
-    //std::mutex mutex;
-
-    /*body.Execute(
-      iterator::Range{ 0 },
-      WriteLoop(mutex, file, AllNodes, u, EveryNthStep(1))
-    );*/
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
     setStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
@@ -124,17 +118,6 @@ int main(int argc, char** argv)
     testLumpedVec(lumpedM, tol);
 
     Matrix A            = getStiffnessmatrix(mesh, false, body, sigma);
-
-//    // Open a file stream for each distributed context
-//    std::ofstream w { std::string { "Out_" } +  std::to_string(hpm.gaspi_context.rank().get()) + ".txt" };
-
-//    std::mutex mutex;
-
-//    // Pass WriteLoop to the rts
-//    body.Execute(
-//                WriteLoop(mutex, w, AllCells, buffer)
-//                );
-
 
     // check if startvector was set correctly
     //std::stringstream s;
