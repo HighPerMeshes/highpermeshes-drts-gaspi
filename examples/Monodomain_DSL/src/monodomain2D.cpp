@@ -43,16 +43,16 @@ constexpr int dim    = Mesh::CellDimension;
 
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
 template<typename MeshT, typename BufferT, typename LoopBodyT>
-void setStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj);
+void SetStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj);
 
 template<typename MeshT, typename LoopBodyT, typename BufferT>
-void GetLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat) ;
+void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat) ;
 
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
 
 template<typename BufferT, typename VectorT>
-void ExplEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h);
+void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h);
 
 template<typename BufferT>
 auto Iion(const BufferT & u, const BufferT & w, const float & a) -> Vector;
@@ -89,10 +89,10 @@ int main(int argc, char** argv)
     int maxY = std::ceil(std::sqrt(numNodes));
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
-    setStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
+    SetStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
-    setStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
+    SetStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
 
     Vector u_deriv;
     Vector w_deriv;
@@ -100,7 +100,7 @@ int main(int argc, char** argv)
 
     /*------------------------------------------(3) Create monodomain problem ---------------------------------------------------------------------------------*/
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
-    GetLumpedMassMatrix(mesh, body, lumpedMat);
+    AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
     // check if startvector was set correctly
     std::stringstream s;
@@ -113,8 +113,8 @@ int main(int argc, char** argv)
         f_i     = Iion(u, w, a);
         u_deriv = UDerivation(u, mesh, body, f_i, lumpedMat, sigma);
         w_deriv = WDerivation(u, w, b);
-        ExplEuler(u, u_deriv, h);
-        ExplEuler(w, w_deriv, h);
+        FWEuler(u, u_deriv, h);
+        FWEuler(w, w_deriv, h);
 
         //if ((j+1)%10 == 0)
         //{
@@ -134,7 +134,7 @@ int main(int argc, char** argv)
 //! \brief Create start vector.
 //!
 template<typename MeshT, typename BufferT, typename LoopBodyT>
-void setStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj)
+void SetStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj)
 {
     auto nodes { mesh.template GetEntityRange<0>() };
 
@@ -157,7 +157,7 @@ void setStartVector(const MeshT & mesh, BufferT & startVec, const float & startV
 //! \brief Assemble rom-sum lumped mass matrix
 //!
 template<typename MeshT, typename LoopBodyT, typename BufferT>
-void GetLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat)
+void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat)
 {
     auto cells {mesh.template GetEntityRange<2>()};
     bodyObj.Execute(HPM::ForEachEntity(
@@ -237,10 +237,10 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 
 
 //!
-//! \brief Explizit Euler algorithm.
+//! \brief Forward (explicit) Euler algorithm.
 //!
 template<typename BufferT, typename VectorT>
-void ExplEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h)
+void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h)
 {
     for (int i = 0; i < vecOld.GetSize(); ++i )
         vecOld[i] += h*vecOldDeriv[i];
