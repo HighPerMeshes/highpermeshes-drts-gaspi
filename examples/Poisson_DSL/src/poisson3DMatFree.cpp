@@ -194,7 +194,7 @@ void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT b
             {
                 float val      = _detJ[row][col];
                 const auto& gr = invJT * gradients[row];
-                result[col]   += ((gc*gr) + val) * _d[row];
+                result[col]   += ((gc*gr) * val) * _d[row];
             }
         }
 
