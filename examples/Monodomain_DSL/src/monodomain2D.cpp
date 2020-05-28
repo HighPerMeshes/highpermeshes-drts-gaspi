@@ -45,23 +45,8 @@ constexpr int dim    = Mesh::CellDimension;
 template<typename MeshT, typename BufferT, typename LoopBodyT>
 void setStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj);
 
-template<typename MeshT, typename LoopBodyT, typename SigmaT>
-auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, SigmaT sigma) -> Matrix;
-
-template<typename MeshT, typename LoopBodyT>
-auto getLumpedMassmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj) -> Vector;
-
 template<typename MeshT, typename LoopBodyT, typename BufferT>
-void GetLumpedMassmatrix2(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat) ;
-
-template<typename VectorT>
-void testLumpedVec(const VectorT & lumpedM, const float & tol);
-
-template<typename VectorT, typename BufferT, typename NodesT>
-void assembleLumpedVec(VectorT & lumpedM, const BufferT & LSM, const NodesT & MeshEntityNodes);
-
-template<typename MatrixT, typename BufferT, typename NodesT>
-void assembleGlobalStiffnessMatrixPerCell(MatrixT & GSM, const BufferT & LSM, const NodesT & MeshEntityNodes);
+void GetLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat) ;
 
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
@@ -89,19 +74,15 @@ int main(int argc, char** argv)
     const Mesh mesh      = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
-
-    /*------------------------------------------(2) Create monodomain problem ---------------------------------------------------------------------------------*/
+    /*------------------------------------------(2) Set start values ------------------------------------------------------------------------------------------*/
     int numIt   = 500;
     float h     = 0.003;
     float a     = 0.3;
     float b     = 0.7;
     float sigma = 3;
-    float tol   = 0.1;
 
     float u0L  = 1.F; float u0R  = 0.F;
     float w0L  = 0.F; float w0R  = 1.F;
-
-    bool outputOpt = false;
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = std::ceil(std::sqrt(numNodes)/4);
@@ -109,9 +90,6 @@ int main(int argc, char** argv)
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
     setStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
-    // Open a file stream for each distributed context
-    std::ofstream file { std::string { "OutU0_" } +  std::to_string(hpm.gaspi_context.rank().get()) + ".txt" };
-    auto AllNodes { mesh.GetEntityRange<0>() } ;
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
     setStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
@@ -120,8 +98,9 @@ int main(int argc, char** argv)
     Vector w_deriv;
     Vector f_i;
 
+    /*------------------------------------------(3) Create monodomain problem ---------------------------------------------------------------------------------*/
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
-    GetLumpedMassmatrix2(mesh, body, lumpedMat);
+    GetLumpedMassMatrix(mesh, body, lumpedMat);
 
     // check if startvector was set correctly
     std::stringstream s;
@@ -175,53 +154,34 @@ void setStartVector(const MeshT & mesh, BufferT & startVec, const float & startV
 }
 
 //!
-//! \brief Define storage buffers for stiffness matrix in form of local matrices to be scattered.
+//! \brief Assemble rom-sum lumped mass matrix
 //!
-//! \param mesh meshfile
-//! \param localMatrices local matrices to be scattered
-//! \param GSM global matrix
-//! \param optOutput if true, output of vector localMatrices
-//! \param bodyObj object of loop body
-//!
-template<typename MeshT, typename LoopBodyT, typename SigmaT>
-auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, SigmaT sigma) -> Matrix
+template<typename MeshT, typename LoopBodyT, typename BufferT>
+void GetLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat)
 {
-    HPM::Buffer<float, Mesh, Dofs<3, 0, 0, 0>> localMatrices(mesh);
-    Matrix GSM; GSM.resize(mesh.template GetNumEntities<0>(), Vector(mesh.template GetNumEntities<0>()));
-
-    auto cells { mesh.template GetEntityRange<2>() };
-
+    auto cells {mesh.template GetEntityRange<2>()};
     bodyObj.Execute(HPM::ForEachEntity(
                         cells,
-                        std::tuple(ReadWrite(Node(localMatrices))),
+                        std::tuple(ReadWrite(Node(lumpedMat))),
                         [&](auto const& cell, const auto& iter, auto& lvs)
     {
-        auto& localMatrices   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        const auto& gradients = GetGradients2DP1();
-        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        auto tmp        = cell.GetGeometry().GetJacobian();
+        float detJ      = std::abs(tmp.Determinant());
 
-        auto tmp   = cell.GetGeometry().GetJacobian();
-        float detJ = tmp.Determinant(); detJ = std::abs(detJ);
-        auto inv   = tmp.Invert();
-        auto invJT = inv.Transpose();
-
-        for (int col = 0; col < dim+1; ++col)
+        for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
         {
-            auto gc = invJT * gradients[col];
-            for (int row = 0; row < dim+1; ++row)
+            int id_node1 = node1.GetTopology().GetLocalIndex();
+            for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
             {
-                auto gr                  = invJT * gradients[row];
-                localMatrices[row][col]  =  (-1) * sigma * detJ * 0.5 * (gc*gr);
+                if (node2.GetTopology().GetLocalIndex() == id_node1)
+                    lumpedMat[id_node1][0] += detJ * 1/12;
+                else
+                    lumpedMat[id_node1][0] += detJ * 1/24;
             }
         }
-
-        assembleGlobalStiffnessMatrixPerCell(GSM, localMatrices, nodeIdSet);
     }));
-
-    if (optOutput)
-        outputMat(GSM, "GSM",GSM.size(),GSM[0].size());
-
-    return GSM;
+    return;
 }
 
 //!
@@ -274,112 +234,7 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
     return;
 }
 
-//!
-//! \brief Define storage buffers for stiffness matrix in form of local matrices to be scattered.
-//!
-//! \param mesh meshfile
-//! \param localMatrices local matrices to be scattered
-//! \param GSM global matrix
-//! \param optOutput if true, output of vector localMatrices
-//! \param bodyObj object of loop body
-//!
-template<typename MeshT, typename LoopBodyT>
-auto getLumpedMassmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj) -> Vector
-{
-    HPM::Buffer<float, Mesh, Dofs<3, 0, 0, 0>> localMatrices(mesh);
-    Vector lumpedM; lumpedM.resize(mesh.template GetNumEntities<0>());
-    auto cells { mesh.template GetEntityRange<2>() };
 
-    bodyObj.Execute(HPM::ForEachEntity(
-                        cells,
-                        std::tuple(ReadWrite(Node(localMatrices))),
-                        [&](auto const& cell, const auto& iter, auto& lvs)
-    {
-        auto& localMatrices   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
-        auto tmp              = cell.GetGeometry().GetJacobian();
-        float detJ            = std::abs(tmp.Determinant());
-
-        for (int col = 0; col < dim+1; ++col)
-            for (int row = 0; row < dim+1; ++row)
-            {
-                if ( row == col)
-                    localMatrices[row][col] = detJ * 1/12 ;
-                else
-                    localMatrices[row][col] = detJ * 1/24;
-            }
-
-        assembleLumpedVec(lumpedM, localMatrices, nodeIdSet);
-    }));
-
-    return lumpedM;
-}
-
-
-
-template<typename MeshT, typename LoopBodyT, typename BufferT>
-void GetLumpedMassmatrix2(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat)
-{
-    auto cells {mesh.template GetEntityRange<2>()};
-    bodyObj.Execute(HPM::ForEachEntity(
-                        cells,
-                        std::tuple(ReadWrite(Node(lumpedMat))),
-                        [&](auto const& cell, const auto& iter, auto& lvs)
-    {
-        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        auto tmp        = cell.GetGeometry().GetJacobian();
-        float detJ      = std::abs(tmp.Determinant());
-
-        for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
-        {
-            int id_node1 = node1.GetTopology().GetLocalIndex();
-            for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
-            {
-                if (node2.GetTopology().GetLocalIndex() == id_node1)
-                    lumpedMat[id_node1][0] += detJ * 1/12;
-                else
-                    lumpedMat[id_node1][0] += detJ * 1/24;
-            }
-        }
-    }));
-    return;
-}
-
-
-//!
-//! \brief Create a global matrix by assembling local matrices.
-//!
-//! \param GSM global stiffness matrix
-//! \param LSM local stiffness matrix
-//! \param MeshEntityNodes global id's of element nodes (here: cell nodes)
-//! \param numRows number of LSM rows
-//! \param numCols number of LSM cols
-//!
-template<typename VectorT, typename BufferT, typename NodesT>
-void assembleLumpedVec(VectorT & lumpedM, const BufferT & LSM, const NodesT & MeshEntityNodes)
-{
-    for (int i = 0; i < dim+1; ++i)
-        for (int j = 0; j < dim+1; ++j)
-            lumpedM[MeshEntityNodes[i]] += LSM[i][j];
-    return;
-}
-
-//!
-//! \brief Create a global stiffness matrix by assembling local matrices.
-//!
-//! \param GSM global stiffness matrix
-//! \param LSM local stiffness matrix
-//! \param MeshEntityNodes global id's of element nodes
-//!
-template<typename MatrixT, typename BufferT, typename NodesT>
-void assembleGlobalStiffnessMatrixPerCell(MatrixT & GSM, const BufferT & LSM, const NodesT & MeshEntityNodes)
-{
-    for (int i = 0; i < dim+1; ++i)
-        for (int j = 0; j < dim+1; ++j)
-            GSM[MeshEntityNodes[i]][MeshEntityNodes[j]] += LSM[i][j];
-
-    return;
-}
 
 //!
 //! \brief Explizit Euler algorithm.
@@ -434,21 +289,4 @@ auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vecto
         w_deriv[i] = u[i]-b*w[i];
 
     return w_deriv;
-}
-
-//!
-//! \brief Check lumped mass matrix.
-//!
-template<typename VectorT>
-void testLumpedVec(const VectorT & lumpedM, const float & tol)
-{
-    double val = 0;
-    for (int i = 0; i < lumpedM.size(); ++i)
-        val += lumpedM[i];
-
-    val = val/lumpedM.size();
-    if ( val < (1-tol))
-        std::cout << "Ratio of lumping Massmatrix is:  " << val << ". Ratio could be too small!" << std::endl;
-
-    return;
 }
