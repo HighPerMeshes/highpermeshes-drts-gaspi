@@ -4,15 +4,19 @@
  * project     : HighPerMeshes (BMBF)                                              *
  *                                                                                 *
  * Description:                                                                    *
- * Implementation of monodomain example using the HighPerMeshes DSL (more          *
- * descriptions later).                                                            *
+ * Implementation of monodomain example using the HighPerMeshes DSL.               *
  *                                                                                 *
  * Equation system: u'(t) = -div(\sigma \Nabla u) + I_{ion}(u,w)                   *
- *                  w'(t) = u - w - b                                              *
+ *                  w'(t) = f(u,w)                                                 *
+ * with \sigma as conductivity,I_{ion} as ion current and f(u,w) as gating dynamic.*
  *                                                                                 *
+ *                  FitzHugh-Nagumo membrane model:                                *
  *                  I_{ion} = u(1-a)(u-a)-w                                        *
- *                  u(0)    = 1                                                    *
- *                  w(0)    = 0                                                    *
+ *                  f(u,w)  = u - b*w                                              *
+ *                                                                                 *
+ * using the start vectors:                                                        *
+ *                  u(0) = 1  on \Omega_1 and u(0) = 0  on \Omega_2,               *
+ *                  w(0) = 0  on \Omega_1 and w(0) = 1  on \Omega_2.               *
  *                                                                                 *
  * last change: 20.05.2020                                                         *
  * ------------------------------------------------------------------------------ **/
