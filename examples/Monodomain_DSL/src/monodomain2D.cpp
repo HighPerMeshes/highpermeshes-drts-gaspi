@@ -63,14 +63,19 @@ void assembleLumpedVec(VectorT & lumpedM, const BufferT & LSM, const NodesT & Me
 template<typename MatrixT, typename BufferT, typename NodesT>
 void assembleGlobalStiffnessMatrixPerCell(MatrixT & GSM, const BufferT & LSM, const NodesT & MeshEntityNodes);
 
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
+void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
+
 template<typename BufferT, typename VectorT>
 void ExplEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h);
 
 template<typename BufferT>
 auto Iion(const BufferT & u, const BufferT & w, const float & a) -> Vector;
 
-template<typename BufferT, typename VectorT, typename MatrixT>
-auto UDerivation(const BufferT & u, const MatrixT & Stiffnessmatrix, const VectorT & Iion) -> Vector;
+//template<typename BufferT, typename VectorT, typename MatrixT>
+//auto UDerivation(const BufferT & u, const MatrixT & Stiffnessmatrix, const VectorT & Iion) -> Vector;
+template<typename BufferT, typename MeshT, typename LoopBodyT, typename VectorT>
+auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const VectorT & Iion, const BufferT & lumpedM, const float & sigma) -> Vector;
 
 template<typename BufferT/*,typename VectorT*/>
 auto WDerivation(const BufferT & u, const BufferT/*VectorT*/ & w, const float & b) -> Vector;
@@ -88,11 +93,11 @@ int main(int argc, char** argv)
 
 
     /*------------------------------------------(2) Create monodomain problem ---------------------------------------------------------------------------------*/
-    int numIt   = 2000;
-    float h     = 0.02;
+    int numIt   = 500;
+    float h     = 0.003;
     float a     = 0.3;
     float b     = 0.7;
-    float sigma = 1;
+    float sigma = 3;
 
     float u0L  = 1.F; float u0R  = 0.F;
     float w0L  = 0.F; float w0R  = 1.F;
@@ -116,45 +121,44 @@ int main(int argc, char** argv)
     Vector w_deriv;
     Vector f_i;
 
-    Vector lumpedM      = getLumpedMassmatrix(mesh, outputOpt, body);
-    outputVec(lumpedM,"Ml_old", lumpedM.size());
+    //Vector lumpedM      = getLumpedMassmatrix(mesh, outputOpt, body);
+    //outputVec(lumpedM,"Ml_old", lumpedM.size());
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     GetLumpedMassmatrix2(mesh, body, lumpedMat);
-    outputVec(lumpedMat,"Ml_new", lumpedMat.GetSize());
+    //outputVec(lumpedMat,"Ml_new", lumpedMat.GetSize());
 
-    /*
+
     float tol           = 0.1;
-    testLumpedVec(lumpedM, tol);
+    //testLumpedVec(lumpedM, tol);
+
+    //Matrix A            = getStiffnessmatrix(mesh, false, body, sigma);
 
 
-    Matrix A            = getStiffnessmatrix(mesh, false, body, sigma);
 
     // check if startvector was set correctly
-    //std::stringstream s;
-    //s << 0;
-    //std::string name = "test" + s.str();
-    //writeVTKOutput(mesh, name, u, "resultU");
-    //writeVTKOutput2DTime(mesh, name, u, "resultU");
+    std::stringstream s;
+    s << 0;
+    std::string name = "test2_withWAndLumpedM" + s.str();
+    writeVTKOutput2DTime(mesh, name, u, "resultU");
 
     for (int j = 0; j < numIt; ++j)
     {
         f_i     = Iion(u, w, a);
-        u_deriv = UDerivation(u, A, f_i);
+        u_deriv = UDerivation(u, mesh, body, f_i, lumpedMat, sigma);// UDerivation(u, A, f_i);
         w_deriv = WDerivation(u, w, b);
         ExplEuler(u, u_deriv, h);
         ExplEuler(w, w_deriv, h);
-        setStartVector(mesh, w, 0, 0, maxX, maxY, body);
 
-        if ((j+1)%10 == 0)
-        {
+        //if ((j+1)%10 == 0)
+        //{
             std::stringstream s;
             s << j+1;
-            std::string name = "C_test_n1_d1_WithoutW_" + s.str();
+            std::string name = "test2_withWAndLumpedM" + s.str();
             writeVTKOutput2DTime(mesh, name, u, "resultU");
-        }
+        //}
     }
-    */
+
     return 0;
 }
 #endif
@@ -234,6 +238,57 @@ auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, S
 }
 
 //!
+//! matrix-vector product split into single scalar operations
+//!
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
+void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer)
+{
+    auto cells { mesh.template GetEntityRange<2>() };
+    bodyObj.Execute(HPM::ForEachEntity(
+                  cells,
+                  std::tuple(ReadWrite(Node(sBuffer))),
+                  [&](auto const& cell, const auto& iter, auto& lvs)
+    {
+        constexpr int nrows = dim+1;
+        constexpr int ncols = dim+1;
+        const auto& gradients = GetGradients2DP1();
+        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+        const auto& tmp  = cell.GetGeometry().GetJacobian();
+        const float detJ = std::abs(tmp.Determinant());
+
+        const auto& inv   = tmp.Invert();
+        const auto& invJT = inv.Transpose();
+
+        // separate GATHER
+        std::array<float, nrows> _d;
+        for (int row = 0; row < nrows; ++row)
+            _d[row] = d[nodeIdSet[row]];
+
+        // accumulate into contiguous block of memory
+        std::array<float, ncols> result{};
+
+        float val      = detJ * 0.5;
+        for (int col = 0; col < ncols; ++col)
+        {
+            const auto& gc = invJT * gradients[col] * (detJ/6);
+            for (int row = 0; row < nrows; ++row)
+            {
+                //float val      = _detJ[row][col] * 0.5;
+                const auto& gr = invJT * gradients[row];
+                result[col]   += ((gc*gr) * val) * _d[row];
+            }
+        }
+
+        // separate SCATTER (accumulate)
+        for (int col = 0; col < ncols; ++col)
+            sBuffer[nodeIdSet[col]] += result[col];
+    }));
+
+    return;
+}
+
+//!
 //! \brief Define storage buffers for stiffness matrix in form of local matrices to be scattered.
 //!
 //! \param mesh meshfile
@@ -263,9 +318,9 @@ auto getLumpedMassmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj) 
             for (int row = 0; row < dim+1; ++row)
             {
                 if ( row == col)
-                    localMatrices[row][col] += detJ * 1/12 ;
+                    localMatrices[row][col] = detJ * 1/12 ;
                 else
-                    localMatrices[row][col] += detJ * 1/24;
+                    localMatrices[row][col] = detJ * 1/24;
             }
 
         assembleLumpedVec(lumpedM, localMatrices, nodeIdSet);
@@ -279,49 +334,28 @@ auto getLumpedMassmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj) 
 template<typename MeshT, typename LoopBodyT, typename BufferT>
 void GetLumpedMassmatrix2(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat)
 {
-
-    //Vector lumpedM; lumpedM.resize(mesh.template GetNumEntities<0>());
-    auto cells { mesh.template GetEntityRange<2>() };
-
+    auto cells {mesh.template GetEntityRange<2>()};
     bodyObj.Execute(HPM::ForEachEntity(
                         cells,
                         std::tuple(ReadWrite(Node(lumpedMat))),
                         [&](auto const& cell, const auto& iter, auto& lvs)
     {
-        auto& lumpedMat   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        //const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
-        auto tmp              = cell.GetGeometry().GetJacobian();
-        float detJ            = std::abs(tmp.Determinant());
+        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        auto tmp        = cell.GetGeometry().GetJacobian();
+        float detJ      = std::abs(tmp.Determinant());
 
         for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
         {
-            int id_node1      = node1.GetTopology().GetLocalIndex();
+            int id_node1 = node1.GetTopology().GetLocalIndex();
             for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
             {
                 if (node2.GetTopology().GetLocalIndex() == id_node1)
-                    lumpedMat[id_node1][0] += detJ/12;
+                    lumpedMat[id_node1][0] += detJ * 1/12;
                 else
-                    lumpedMat[id_node1][0] += detJ/24;
+                    lumpedMat[id_node1][0] += detJ * 1/24;
             }
         }
-
-//        for (int col = 0; col < dim+1; ++col)
-//            for (int row = 0; row < dim+1; ++row)
-//            {
-//                if ( row == col)
-//                    localMatrices[row][col] += detJ * 1/12 ;
-//                else
-//                    localMatrices[row][col] += detJ * 1/24;
-//            }
-
-        //if (optOutput)
-          //  outputMat(localMatrices, "Local matrix per tetraeder",dim+1,dim+1);
-
-        //assembleLumpedVec(lumpedM, localMatrices, nodeIdSet);
     }));
-
-
-
     return;
 }
 
@@ -389,18 +423,24 @@ auto Iion(const BufferT & u, const BufferT & w, const float & a) -> Vector
 //!
 //! \brief Compute derivation of u at time step t.
 //!
-template<typename BufferT, typename VectorT, typename MatrixT>
-auto UDerivation(const BufferT & u, const MatrixT & Stiffnessmatrix, const VectorT & Iion) -> Vector
+template<typename BufferT, typename MeshT, typename LoopBodyT, typename VectorT>
+auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const VectorT & Iion, const BufferT & lumpedM, const float & sigma) -> Vector
 {
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
+    AssembleMatrixVecProduct2D(mesh, u, bodyObj, s);
+
     Vector u_deriv; u_deriv.resize(u.GetSize());
 
+//    for (int i = 0; i < u.GetSize(); ++i)
+//    {
+//        double Du_ij = 0;
+//        for (int j = 0; j < u.GetSize(); ++j)
+//            Du_ij += Stiffnessmatrix[i][j] * u[j];
+//        u_deriv[i] += Du_ij + Iion[i];
+//    }
+
     for (int i = 0; i < u.GetSize(); ++i)
-    {
-        double Du_ij = 0;
-        for (int j = 0; j < u.GetSize(); ++j)
-            Du_ij += Stiffnessmatrix[i][j] * u[j];
-        u_deriv[i] += Du_ij + Iion[i];
-    }
+        u_deriv[i] += ((1/lumpedM[i]) * sigma * s[i]) + Iion[i];
 
     return u_deriv;
 }
@@ -412,10 +452,8 @@ template<typename BufferT/*,typename VectorT*/>
 auto WDerivation(const BufferT & u, const /*VectorT*/BufferT & w, const float & b) -> Vector
 {
     Vector w_deriv; w_deriv.resize(w.GetSize());
-    float eps = 0.5;
-
     for (int i = 0; i < w.GetSize(); ++i)
-        w_deriv[i] = eps*(u[i]-b*w[i]);
+        w_deriv[i] = u[i]-b*w[i];
 
     return w_deriv;
 }
