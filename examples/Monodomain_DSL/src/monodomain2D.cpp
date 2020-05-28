@@ -72,8 +72,6 @@ void ExplEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h);
 template<typename BufferT>
 auto Iion(const BufferT & u, const BufferT & w, const float & a) -> Vector;
 
-//template<typename BufferT, typename VectorT, typename MatrixT>
-//auto UDerivation(const BufferT & u, const MatrixT & Stiffnessmatrix, const VectorT & Iion) -> Vector;
 template<typename BufferT, typename MeshT, typename LoopBodyT, typename VectorT>
 auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const VectorT & Iion, const BufferT & lumpedM, const float & sigma) -> Vector;
 
@@ -98,6 +96,7 @@ int main(int argc, char** argv)
     float a     = 0.3;
     float b     = 0.7;
     float sigma = 3;
+    float tol   = 0.1;
 
     float u0L  = 1.F; float u0R  = 0.F;
     float w0L  = 0.F; float w0R  = 1.F;
@@ -121,20 +120,8 @@ int main(int argc, char** argv)
     Vector w_deriv;
     Vector f_i;
 
-    //Vector lumpedM      = getLumpedMassmatrix(mesh, outputOpt, body);
-    //outputVec(lumpedM,"Ml_old", lumpedM.size());
-
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     GetLumpedMassmatrix2(mesh, body, lumpedMat);
-    //outputVec(lumpedMat,"Ml_new", lumpedMat.GetSize());
-
-
-    float tol           = 0.1;
-    //testLumpedVec(lumpedM, tol);
-
-    //Matrix A            = getStiffnessmatrix(mesh, false, body, sigma);
-
-
 
     // check if startvector was set correctly
     std::stringstream s;
@@ -145,7 +132,7 @@ int main(int argc, char** argv)
     for (int j = 0; j < numIt; ++j)
     {
         f_i     = Iion(u, w, a);
-        u_deriv = UDerivation(u, mesh, body, f_i, lumpedMat, sigma);// UDerivation(u, A, f_i);
+        u_deriv = UDerivation(u, mesh, body, f_i, lumpedMat, sigma);
         w_deriv = WDerivation(u, w, b);
         ExplEuler(u, u_deriv, h);
         ExplEuler(w, w_deriv, h);
@@ -274,7 +261,6 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
             const auto& gc = invJT * gradients[col] * (detJ/6);
             for (int row = 0; row < nrows; ++row)
             {
-                //float val      = _detJ[row][col] * 0.5;
                 const auto& gr = invJT * gradients[row];
                 result[col]   += ((gc*gr) * val) * _d[row];
             }
@@ -431,14 +417,6 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
 
     Vector u_deriv; u_deriv.resize(u.GetSize());
 
-//    for (int i = 0; i < u.GetSize(); ++i)
-//    {
-//        double Du_ij = 0;
-//        for (int j = 0; j < u.GetSize(); ++j)
-//            Du_ij += Stiffnessmatrix[i][j] * u[j];
-//        u_deriv[i] += Du_ij + Iion[i];
-//    }
-
     for (int i = 0; i < u.GetSize(); ++i)
         u_deriv[i] += ((1/lumpedM[i]) * sigma * s[i]) + Iion[i];
 
@@ -448,8 +426,8 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
 //!
 //! \brief Compute derivation of w at time step t.
 //!
-template<typename BufferT/*,typename VectorT*/>
-auto WDerivation(const BufferT & u, const /*VectorT*/BufferT & w, const float & b) -> Vector
+template<typename BufferT>
+auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vector
 {
     Vector w_deriv; w_deriv.resize(w.GetSize());
     for (int i = 0; i < w.GetSize(); ++i)
