@@ -47,7 +47,7 @@ constexpr int dim    = Mesh::CellDimension;
 
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
 template<typename MeshT, typename BufferT, typename LoopBodyT>
-void SetStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj);
+void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj);
 
 template<typename MeshT, typename LoopBodyT, typename BufferT>
 void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & lumpedMat) ;
@@ -93,10 +93,10 @@ int main(int argc, char** argv)
     int maxY = std::ceil(std::sqrt(numNodes));
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
-    SetStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
+    CreateStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
-    SetStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
+    CreateStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
 
     Vector u_deriv;
     Vector w_deriv;
@@ -138,7 +138,7 @@ int main(int argc, char** argv)
 //! \brief Create start vector.
 //!
 template<typename MeshT, typename BufferT, typename LoopBodyT>
-void SetStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj)
+void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT bodyObj)
 {
     auto nodes { mesh.template GetEntityRange<0>() };
 
