@@ -64,8 +64,8 @@ auto Iion(const BufferT & u, const BufferT & w, const float & a) -> Vector;
 template<typename BufferT, typename MeshT, typename LoopBodyT, typename VectorT>
 auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const VectorT & Iion, const BufferT & lumpedM, const float & sigma) -> Vector;
 
-template<typename BufferT/*,typename VectorT*/>
-auto WDerivation(const BufferT & u, const BufferT/*VectorT*/ & w, const float & b) -> Vector;
+template<typename BufferT>
+auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vector;
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -79,14 +79,14 @@ int main(int argc, char** argv)
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
     /*------------------------------------------(2) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt   = 500;
-    float h     = 0.003;
+    int numIt   = 500; // number of iterations
+    float h     = 0.003; // step size
     float a     = 0.3;
     float b     = 0.7;
     float sigma = 3;
 
-    float u0L  = 1.F; float u0R  = 0.F;
-    float w0L  = 0.F; float w0R  = 1.F;
+    float u0L  = 1.F; float u0R  = 0.F; // values for start vector u on \Omega_1 and \Omega_2
+    float w0L  = 0.F; float w0R  = 1.F; // values for start vector w on \Omega_1 and \Omega_2
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = std::ceil(std::sqrt(numNodes)/4);
