@@ -55,9 +55,6 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & l
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
 
-//template<typename BufferT, typename VectorT>
-//void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h);
-
 template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
 void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h, LoopbodyT body, const MeshT & mesh);
 
@@ -98,7 +95,7 @@ int main(int argc, char** argv)
 
 
     float u0L  = v1;  float u0R  = 0.F; // values for start vector u on \Omega_1 and \Omega_2
-    float w0L  = 0.F; float w0R  = v2;   // values for start vector w on \Omega_1 and \Omega_2
+    float w0L  = 0.F; float w0R  = v2;  // values for start vector w on \Omega_1 and \Omega_2
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = std::ceil(std::sqrt(numNodes)/4);
@@ -160,7 +157,6 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
                   [&](auto const& node, const auto& iter, auto& lvs)
     {
         auto coords = node.GetTopology().GetVertices();
-        //if ( (coords[0][0] <= maxX) && (coords[0][1] <= maxY) )
         if ( (coords[0][0] < maxX) && (coords[0][1] < maxY) )
             startVec[node.GetTopology().GetIndex()] = startValLeft;
         else
@@ -250,20 +246,6 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 
     return;
 }
-
-
-
-//!
-//! \brief Forward (explicit) Euler algorithm.
-//!
-//template<typename BufferT, typename VectorT>
-//void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h)
-//{
-//    for (int i = 0; i < vecOld.GetSize(); ++i )
-//        vecOld[i] += h*vecOldDeriv[i];
-
-//    return;
-//}
 
 //!
 //! \brief Forward (explicit) Euler algorithm.
