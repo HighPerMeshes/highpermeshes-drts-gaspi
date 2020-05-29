@@ -55,8 +55,11 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT bodyObj, BufferT & l
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
 
-template<typename BufferT, typename VectorT>
-void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h);
+//template<typename BufferT, typename VectorT>
+//void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h);
+
+template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
+void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h, LoopbodyT body, const MeshT & mesh);
 
 template<typename BufferT>
 auto Iion(const BufferT & u, const BufferT & w, const float & a) -> Vector;
@@ -65,7 +68,7 @@ template<typename BufferT, typename MeshT, typename LoopBodyT, typename VectorT>
 auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const VectorT & Iion, const BufferT & lumpedM, const float & sigma) -> Vector;
 
 template<typename BufferT>
-auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vector;
+auto WDerivation(const BufferT & u, const BufferT & w, const float & b, const float & eps) -> Vector;
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -79,22 +82,30 @@ int main(int argc, char** argv)
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
     /*------------------------------------------(2) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt   = 1500; // number of iterations
-    float h     = 0.002; // step size
-    float b     = 0.7;
-    float a     = 1-(2*b/3)+0.05;//0.8;
-    float sigma = -2; // has to be negativ
 
-    float u0L  = 1.F; float u0R  = 0.F; // values for start vector u on \Omega_1 and \Omega_2
-    float w0L  = 0.F; float w0R  = 0.1;//1.F; // values for start vector w on \Omega_1 and \Omega_2
+    // input options for small mesh 5x5 (config.cfg -> mesh2D_test5x5.am)
+//    int numIt = 2000; // number of iterations
+//    float h   = 0.015; // step size
+//    float a = -0.1; float b = 0.008; float eps = 0.1; float sigma = -0.1;
+//    float v1 = 0.1; float v2 = 0.1; // value for start vector(s)
+
+    // value option for bigger mesh 100x100 (config.cfg -> mesh2D.am)
+    int numIt = 1500; // number of iterations
+    float h   = 0.2; // step size
+    float a = -0.1; float b = 1e-4; float eps = 0.005; float sigma = -0.1;
+    float v1 = 1; float v2 = 0; // value for start vector(s)
+
+
+
+    float u0L  = v1;  float u0R  = 0.F; // values for start vector u on \Omega_1 and \Omega_2
+    float w0L  = 0.F; float w0R  = v2;   // values for start vector w on \Omega_1 and \Omega_2
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = std::ceil(std::sqrt(numNodes)/4);
     int maxY = std::ceil(std::sqrt(numNodes));
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
-    //CreateStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
-    CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body); //For 5x5 Mesh
+    CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
     CreateStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
@@ -108,26 +119,24 @@ int main(int argc, char** argv)
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
     // check if startvector was set correctly
-//    std::stringstream s;
-//    s << 0;
-//    std::string name = "test_5x5Mesh" + s.str();
-//    writeVTKOutput2DTime(mesh, name, u, "resultU");
-
-
+    std::stringstream s;
+    s << 0;
+    std::string name = "test_100x100Mesh_newFWEuler" + s.str();
+    writeVTKOutput2DTime(mesh, name, u, "resultU");
 
     for (int j = 0; j < numIt; ++j)
     {
         f_i     = Iion(u, w, a);
         u_deriv = UDerivation(u, mesh, body, f_i, lumpedMat, sigma);
-        w_deriv = WDerivation(u, w, b);
-        FWEuler(u, u_deriv, h);
-        FWEuler(w, w_deriv, h);
+        w_deriv = WDerivation(u, w, b, eps);
+        FWEuler(u, u_deriv, h, body, mesh);
+        FWEuler(w, w_deriv, h, body, mesh);
 
         if ((j+1)%10 == 0)
         {
             std::stringstream s;
             s << j+1;
-            std::string name = "test_5x5Mesh" + s.str();
+            std::string name = "test_100x100Mesh_newFWEuler" + s.str();
             writeVTKOutput2DTime(mesh, name, u, "resultU");
         }
     }
@@ -247,12 +256,27 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 //!
 //! \brief Forward (explicit) Euler algorithm.
 //!
-template<typename BufferT, typename VectorT>
-void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h)
-{
-    for (int i = 0; i < vecOld.GetSize(); ++i )
-        vecOld[i] += h*vecOldDeriv[i];
+//template<typename BufferT, typename VectorT>
+//void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h)
+//{
+//    for (int i = 0; i < vecOld.GetSize(); ++i )
+//        vecOld[i] += h*vecOldDeriv[i];
 
+//    return;
+//}
+
+//!
+//! \brief Forward (explicit) Euler algorithm.
+//!
+template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
+void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h, LoopbodyT body, const MeshT & mesh)
+{
+    auto vertices {mesh.template GetEntityRange<0>()};
+    body.Execute(HPM::ForEachEntity(
+                  vertices,
+                  std::tuple(ReadWrite(Node(vecOld))),
+                  [&](auto const& vertex, const auto& iter, auto& lvs)
+    { vecOld[vertex.GetTopology().GetIndex()] += h*vecOldDeriv[vertex.GetTopology().GetIndex()]; }));
     return;
 }
 
@@ -281,7 +305,7 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
     Vector u_deriv; u_deriv.resize(u.GetSize());
 
     for (int i = 0; i < u.GetSize(); ++i)
-        u_deriv[i] += (/*(1/lumpedM[i]) **/ sigma * s[i]) + Iion[i];
+        u_deriv[i] += ((1/lumpedM[i]) * sigma * s[i]) + Iion[i];
 
     return u_deriv;
 }
@@ -290,9 +314,8 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
 //! \brief Compute derivation of w at time step t.
 //!
 template<typename BufferT>
-auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vector
+auto WDerivation(const BufferT & u, const BufferT & w, const float & b, const float & eps) -> Vector
 {
-    float eps = 1;
     Vector w_deriv; w_deriv.resize(w.GetSize());
     for (int i = 0; i < w.GetSize(); ++i)
         w_deriv[i] = eps*(u[i]-b*w[i]);
