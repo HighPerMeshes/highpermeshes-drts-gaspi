@@ -67,13 +67,6 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
 template<typename BufferT>
 auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vector;
 
-
-template<typename MatrixT, typename BufferT, typename NodesT>
-void assembleGlobalStiffnessMatrixPerCell(MatrixT & GSM, const BufferT & LSM, const NodesT & MeshEntityNodes);
-
-template<typename MeshT, typename LoopBodyT, typename SigmaT>
-auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, SigmaT sigma) -> Matrix;
-
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
@@ -285,15 +278,6 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
     AssembleMatrixVecProduct2D(mesh, u, bodyObj, s);
 
-    //auto Mat = getStiffnessmatrix(mesh,false,bodyObj,sigma);
-    //Vector s2; s2.resize(25);
-    //for (int k = 0; k < 25; ++k)
-        //for (int j = 0; j < 25; ++j)
-          //  s2[k] += Mat[k][j] * u[j];
-
-    //outputVec(s,"s",s.GetSize());
-    //outputVec(s2,"s2",s2.size());
-
     Vector u_deriv; u_deriv.resize(u.GetSize());
 
     for (int i = 0; i < u.GetSize(); ++i)
@@ -314,58 +298,4 @@ auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vecto
         w_deriv[i] = eps*(u[i]-b*w[i]);
 
     return w_deriv;
-}
-
-
-
-/******************************************TEST**********************************************************************************/
-
-template<typename MatrixT, typename BufferT, typename NodesT>
-void assembleGlobalStiffnessMatrixPerCell(MatrixT & GSM, const BufferT & LSM, const NodesT & MeshEntityNodes)
-{
-    for (int i = 0; i < dim+1; ++i)
-        for (int j = 0; j < dim+1; ++j)
-            GSM[MeshEntityNodes[i]][MeshEntityNodes[j]] += LSM[i][j];
-
-    return;
-}
-
-template<typename MeshT, typename LoopBodyT, typename SigmaT>
-auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, SigmaT sigma) -> Matrix
-{
-    HPM::Buffer<float, Mesh, Dofs<3, 0, 0, 0>> localMatrices(mesh);
-    Matrix GSM; GSM.resize(mesh.template GetNumEntities<0>(), Vector(mesh.template GetNumEntities<0>()));
-
-    auto cells {mesh.template GetEntityRange<2>()};
-    bodyObj.Execute(HPM::ForEachEntity(
-                        cells,
-                        std::tuple(ReadWrite(Node(localMatrices))),
-                        [&](auto const& cell, const auto& iter, auto& lvs)
-    {
-        auto& localMatrices   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        const auto& gradients = GetGradients2DP1();
-        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
-
-        auto tmp   = cell.GetGeometry().GetJacobian();
-        float detJ = tmp.Determinant(); detJ = std::abs(detJ);
-        auto inv   = tmp.Invert();
-        auto invJT = inv.Transpose();
-
-        for (int col = 0; col < dim+1; ++col)
-        {
-            auto gc = invJT * gradients[col];
-            for (int row = 0; row < dim+1; ++row)
-            {
-                auto gr                  = invJT * gradients[row];
-                localMatrices[row][col]  =  detJ * 0.5 * (gc*gr);
-            }
-        }
-
-        assembleGlobalStiffnessMatrixPerCell(GSM, localMatrices, nodeIdSet);
-    }));
-
-    if (optOutput)
-        outputMat(GSM, "GSM",GSM.size(),GSM[0].size());
-
-    return GSM;
 }
