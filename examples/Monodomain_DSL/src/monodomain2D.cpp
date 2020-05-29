@@ -18,7 +18,7 @@
  *                  u(0) = 1  on \Omega_1 and u(0) = 0  on \Omega_2,               *
  *                  w(0) = 0  on \Omega_1 and w(0) = 1  on \Omega_2.               *
  *                                                                                 *
- * last change: 20.05.2020                                                         *
+ * last change: 29.05.2020                                                         *
  * ------------------------------------------------------------------------------ **/
 
 #ifndef MONODOMAIN_CPP
@@ -56,7 +56,7 @@ template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
 
 template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
-void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h, LoopbodyT body, const MeshT & mesh);
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT body, const MeshT & mesh);
 
 template<typename BufferT>
 auto Iion(const BufferT & u, const BufferT & w, const float & a) -> Vector;
@@ -251,14 +251,14 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 //! \brief Forward (explicit) Euler algorithm.
 //!
 template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
-void FWEuler(BufferT & vecOld, const VectorT & vecOldDeriv, const float & h, LoopbodyT body, const MeshT & mesh)
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT body, const MeshT & mesh)
 {
     auto vertices {mesh.template GetEntityRange<0>()};
     body.Execute(HPM::ForEachEntity(
                   vertices,
                   std::tuple(ReadWrite(Node(vecOld))),
                   [&](auto const& vertex, const auto& iter, auto& lvs)
-    { vecOld[vertex.GetTopology().GetIndex()] += h*vecOldDeriv[vertex.GetTopology().GetIndex()]; }));
+    { vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()]; }));
     return;
 }
 
