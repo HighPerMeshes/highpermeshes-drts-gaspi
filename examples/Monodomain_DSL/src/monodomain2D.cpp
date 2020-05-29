@@ -67,6 +67,13 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
 template<typename BufferT>
 auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vector;
 
+
+template<typename MatrixT, typename BufferT, typename NodesT>
+void assembleGlobalStiffnessMatrixPerCell(MatrixT & GSM, const BufferT & LSM, const NodesT & MeshEntityNodes);
+
+template<typename MeshT, typename LoopBodyT, typename SigmaT>
+auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, SigmaT sigma) -> Matrix;
+
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
@@ -79,21 +86,22 @@ int main(int argc, char** argv)
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
     /*------------------------------------------(2) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt   = 500; // number of iterations
-    float h     = 0.003; // step size
-    float a     = 0.3;
+    int numIt   = 1500; // number of iterations
+    float h     = 0.002; // step size
     float b     = 0.7;
-    float sigma = 3;
+    float a     = 1-(2*b/3)+0.05;//0.8;
+    float sigma = -2; // has to be negativ
 
     float u0L  = 1.F; float u0R  = 0.F; // values for start vector u on \Omega_1 and \Omega_2
-    float w0L  = 0.F; float w0R  = 1.F; // values for start vector w on \Omega_1 and \Omega_2
+    float w0L  = 0.F; float w0R  = 0.1;//1.F; // values for start vector w on \Omega_1 and \Omega_2
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = std::ceil(std::sqrt(numNodes)/4);
     int maxY = std::ceil(std::sqrt(numNodes));
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
-    CreateStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
+    //CreateStartVector(mesh, u, u0L, u0R, maxX*2, maxY, body);
+    CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body); //For 5x5 Mesh
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
     CreateStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
@@ -107,10 +115,12 @@ int main(int argc, char** argv)
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
     // check if startvector was set correctly
-    std::stringstream s;
-    s << 0;
-    std::string name = "test2_withWAndLumpedM" + s.str();
-    writeVTKOutput2DTime(mesh, name, u, "resultU");
+//    std::stringstream s;
+//    s << 0;
+//    std::string name = "test_5x5Mesh" + s.str();
+//    writeVTKOutput2DTime(mesh, name, u, "resultU");
+
+
 
     for (int j = 0; j < numIt; ++j)
     {
@@ -120,13 +130,13 @@ int main(int argc, char** argv)
         FWEuler(u, u_deriv, h);
         FWEuler(w, w_deriv, h);
 
-        //if ((j+1)%10 == 0)
-        //{
+        if ((j+1)%10 == 0)
+        {
             std::stringstream s;
             s << j+1;
-            std::string name = "test2_withWAndLumpedM" + s.str();
+            std::string name = "test_5x5Mesh" + s.str();
             writeVTKOutput2DTime(mesh, name, u, "resultU");
-        //}
+        }
     }
 
     return 0;
@@ -148,7 +158,8 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
                   [&](auto const& node, const auto& iter, auto& lvs)
     {
         auto coords = node.GetTopology().GetVertices();
-        if ( (coords[0][0] <= maxX) && (coords[0][1] <= maxY) )
+        //if ( (coords[0][0] <= maxX) && (coords[0][1] <= maxY) )
+        if ( (coords[0][0] < maxX) && (coords[0][1] < maxY) )
             startVec[node.GetTopology().GetIndex()] = startValLeft;
         else
             startVec[node.GetTopology().GetIndex()] = startValRight;
@@ -222,7 +233,7 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
         float val      = detJ * 0.5;
         for (int col = 0; col < ncols; ++col)
         {
-            const auto& gc = invJT * gradients[col] * (detJ/6);
+            const auto& gc = invJT * gradients[col];
             for (int row = 0; row < nrows; ++row)
             {
                 const auto& gr = invJT * gradients[row];
@@ -274,10 +285,19 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
     AssembleMatrixVecProduct2D(mesh, u, bodyObj, s);
 
+    //auto Mat = getStiffnessmatrix(mesh,false,bodyObj,sigma);
+    //Vector s2; s2.resize(25);
+    //for (int k = 0; k < 25; ++k)
+        //for (int j = 0; j < 25; ++j)
+          //  s2[k] += Mat[k][j] * u[j];
+
+    //outputVec(s,"s",s.GetSize());
+    //outputVec(s2,"s2",s2.size());
+
     Vector u_deriv; u_deriv.resize(u.GetSize());
 
     for (int i = 0; i < u.GetSize(); ++i)
-        u_deriv[i] += ((1/lumpedM[i]) * sigma * s[i]) + Iion[i];
+        u_deriv[i] += (/*(1/lumpedM[i]) **/ sigma * s[i]) + Iion[i];
 
     return u_deriv;
 }
@@ -288,9 +308,64 @@ auto UDerivation(const BufferT & u, const MeshT & mesh, LoopBodyT bodyObj, const
 template<typename BufferT>
 auto WDerivation(const BufferT & u, const BufferT & w, const float & b) -> Vector
 {
+    float eps = 1;
     Vector w_deriv; w_deriv.resize(w.GetSize());
     for (int i = 0; i < w.GetSize(); ++i)
-        w_deriv[i] = u[i]-b*w[i];
+        w_deriv[i] = eps*(u[i]-b*w[i]);
 
     return w_deriv;
+}
+
+
+
+/******************************************TEST**********************************************************************************/
+
+template<typename MatrixT, typename BufferT, typename NodesT>
+void assembleGlobalStiffnessMatrixPerCell(MatrixT & GSM, const BufferT & LSM, const NodesT & MeshEntityNodes)
+{
+    for (int i = 0; i < dim+1; ++i)
+        for (int j = 0; j < dim+1; ++j)
+            GSM[MeshEntityNodes[i]][MeshEntityNodes[j]] += LSM[i][j];
+
+    return;
+}
+
+template<typename MeshT, typename LoopBodyT, typename SigmaT>
+auto getStiffnessmatrix(const MeshT & mesh, bool optOutput, LoopBodyT bodyObj, SigmaT sigma) -> Matrix
+{
+    HPM::Buffer<float, Mesh, Dofs<3, 0, 0, 0>> localMatrices(mesh);
+    Matrix GSM; GSM.resize(mesh.template GetNumEntities<0>(), Vector(mesh.template GetNumEntities<0>()));
+
+    auto cells {mesh.template GetEntityRange<2>()};
+    bodyObj.Execute(HPM::ForEachEntity(
+                        cells,
+                        std::tuple(ReadWrite(Node(localMatrices))),
+                        [&](auto const& cell, const auto& iter, auto& lvs)
+    {
+        auto& localMatrices   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        const auto& gradients = GetGradients2DP1();
+        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+        auto tmp   = cell.GetGeometry().GetJacobian();
+        float detJ = tmp.Determinant(); detJ = std::abs(detJ);
+        auto inv   = tmp.Invert();
+        auto invJT = inv.Transpose();
+
+        for (int col = 0; col < dim+1; ++col)
+        {
+            auto gc = invJT * gradients[col];
+            for (int row = 0; row < dim+1; ++row)
+            {
+                auto gr                  = invJT * gradients[row];
+                localMatrices[row][col]  =  detJ * 0.5 * (gc*gr);
+            }
+        }
+
+        assembleGlobalStiffnessMatrixPerCell(GSM, localMatrices, nodeIdSet);
+    }));
+
+    if (optOutput)
+        outputMat(GSM, "GSM",GSM.size(),GSM[0].size());
+
+    return GSM;
 }
