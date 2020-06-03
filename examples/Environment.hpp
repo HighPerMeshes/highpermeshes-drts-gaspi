@@ -104,7 +104,7 @@ auto GetMeasureKernel(Dispatcher &dispatcher)
     return std::chrono::duration_cast<std::chrono::milliseconds>(HPM::auxiliary::MeasureTime(
                                                                      [&]() {
                                                                        dispatcher.Execute(
-                                                                           iterator::Range{10},
+                                                                           iterator::Range{1000},
                                                                            std::forward<decltype(kernel)>(kernel));
                                                                      }))
         .count();
