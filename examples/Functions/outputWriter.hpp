@@ -6,11 +6,12 @@
  * Description:                                                                    *
  * Implementation of some simple output functions.                                 *
  *                                                                                 *
- * last change: 19.05.20                                                           *
+ * last change: 04.06.20                                                           *
  * -----------------------------------------------------------------------------  **/
 
 #include </usr/include/c++/7/iostream>
 #include <HighPerMeshes.hpp>
+#include <sys/stat.h>
 
 //!
 //! \brief  Output of input vector at terminal/console.
@@ -269,7 +270,7 @@ void writeVTKOutput(const MeshT & mesh, std::string const & filename, const Vect
 //! \param nameOfResult
 //!
 template <typename MeshT, typename T>
-void writeVTKOutput2DTime(const MeshT & mesh, std::string const & filename, const T & result, std::string const nameOfResult)
+void writeVTKOutput2DTime(const MeshT & mesh, std::string const & pathToFolder, std::string const & foldername, std::string const & filename, const T & result, std::string const nameOfResult)
 {
     constexpr int dim = MeshT::CellDimension;
 
@@ -277,13 +278,17 @@ void writeVTKOutput2DTime(const MeshT & mesh, std::string const & filename, cons
     int numberOfCells  = mesh.template GetNumEntities<dim>();
     int cellType;
     if (dim == 3)
-        cellType = 10; // tetrahedrons
+        cellType = 10; // tetrahedra
     else if (dim == 2)
         cellType = 5; // triangles
     else
         cellType = 3; // line
 
-    std::string fname = filename + ".vtu";
+    std::string path = pathToFolder + "/" + foldername;
+    int val = mkdir(path.c_str(), S_IRWXU);
+    if (!val)
+        std::cout<<"Folder  <"<<foldername<<">  has been generated"<<std::endl;
+    std::string fname = path + "/" + filename + ".vtu";
     std::ofstream f(fname.c_str());
 
     f << "<?xml version=\"1.0\"?>" << '\n'
@@ -405,7 +410,8 @@ void writeVTKOutput2DTime(const MeshT & mesh, std::string const & filename, cons
       << "  </UnstructuredGrid>" << '\n'
       << "</VTKFile>" << '\n';
 
-    std::cout<<"Write file to "<<filename<<".vtu"<<std::endl;
+    std::cout<<"Write file "<<filename<<".vtu"<<" to "<<path<<std::endl;
+    return;
 }
 
 //!
