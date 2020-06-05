@@ -23,6 +23,7 @@
 
 #ifndef MONODOMAIN_CPP
 
+#include <fstream>
 #include <iostream>
 #include <tuple>
 #include <metis.h>
@@ -49,7 +50,13 @@ using Mesh           = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::S
 constexpr int dim    = Mesh::CellDimension;
 
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
-void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R);
+auto CreateFile(std::string const & pathToFolder, std::string const & foldername, std::string const & filename) -> std::ofstream;
+
+//template<typename FileT, typename T, typename NameT, typename NameT2>
+//void WriteParameterInfoIntoFile(FileT& file, const NameT& fileName, const T& parameter, const NameT2& parameterName);
+
+void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*,
+                    std::ofstream & file*/);
 
 template<typename MeshT, typename BufferT, typename LoopBodyT>
 void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight,
@@ -64,9 +71,9 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
 void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh);
 
-template<typename BufferT, typename MeshT, typename LoopBodyT>
+template<typename BufferT, typename BufferTGlobal, typename MeshT, typename LoopBodyT>
 void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, LoopBodyT & body,
-                             const BufferT & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
+                             const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
                              const float & a, const float & b, const float & eps);
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
@@ -85,19 +92,23 @@ int main(int argc, char** argv)
     GetCurrentDir(buff, FILENAME_MAX);
     std::string currentWorkingDir(buff);
 
-    std::string foldername = "Test_onlyBuffer";
-    std::string filename   = "test_100x100Mesh_onlyBuffer";
+    std::string foldername = "Test1";
+    std::string filename   = "test1_100x100Mesh_m1d1_";
+    //std::string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
     int numIt = 1000;
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
-    SetStartValues(2, h, a, b, eps, sigma, u0L, u0R, w0L, w0R);
+    //auto file = CreateFile(currentWorkingDir, foldername, parameterFilename);
+    SetStartValues(2, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = std::ceil(std::sqrt(numNodes)/4);
     int maxY = std::ceil(std::sqrt(numNodes));
 
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
+    //HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
+    //CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 1>> u(mesh);
     CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
@@ -111,10 +122,17 @@ int main(int argc, char** argv)
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
+    // read dofs
+//    const auto& dof_partitionU = u.GetDofPartition(0);
+//    Vector vec; vec.resize(numNodes);
+//    for (std::size_t i = 0; i < dof_partitionU.GetSize(); ++i)
+//        vec[i] = dof_partitionU[i];
+
     // check if startvector was set correctly by creating output file at time step zero
     std::stringstream s; s << 0;
     std::string name = filename + s.str();
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+    //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec, "resultU");
 
     // compute
     for (int j = 0; j < numIt; ++j)
@@ -125,9 +143,15 @@ int main(int argc, char** argv)
 
         if ((j+1)%10 == 0)
         {
+//            const auto& dof_partition = u.GetDofPartition(0);
+//            Vector vec_u; vec_u.resize(dof_partition.GetSize());
+//            for (std::size_t i = 0; i < dof_partition.GetSize(); ++i)
+//                vec_u[i] = dof_partition[i];
+
             std::stringstream s; s << j+1;
             name = filename + s.str();
             writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+            //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec_u, "resultU");
         }
     }
 
@@ -140,7 +164,7 @@ int main(int argc, char** argv)
 //!
 //! \brief Set start settings.
 //!
-void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R)
+void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*, std::ofstream& file*/)
 {
     if (option == 1)
     {
@@ -159,7 +183,7 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
     {
         // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
         h     = 0.4; // step size
-        a     = -0.1;
+        a     = 0.1;
         b     = 1e-4;
         eps   = 0.005;
         sigma = -0.1;
@@ -170,6 +194,14 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
     }
     else
         printf("There is no option choosen for start value settings. Create your own option or choose one of the existing.");
+
+    // add parameter to .txt file
+//    std::string fileName = "testParameterfile.txt";
+//    WriteParameterInfoIntoFile(file, fileName, h, "h");
+//    WriteParameterInfoIntoFile(file, fileName, a, "a");
+//    WriteParameterInfoIntoFile(file, fileName, b, "b");
+//    WriteParameterInfoIntoFile(file, fileName, eps, "eps");
+//    WriteParameterInfoIntoFile(file, fileName, sigma, "sigma");
 
     return;
 }
@@ -298,9 +330,9 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Loopbo
 //!
 //! \brief Compute ion current, derivation of u and derivation of w at time step t.
 //!
-template<typename BufferT, typename MeshT, typename LoopBodyT>
+template<typename BufferT, typename BufferTGlobal, typename MeshT, typename LoopBodyT>
 void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, LoopBodyT & body,
-                             const BufferT & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
+                             const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
                              const float & a, const float & b, const float & eps)
 {
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
@@ -318,4 +350,23 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
     }));
 
     return;
+}
+
+//template<typename FileT, typename T, typename NameT, typename NameT2>
+//void WriteParameterInfoIntoFile(FileT& file, const NameT& fileName, const T& parameter, const NameT2& parameterName)
+//{
+//    // fix bug at this code
+//    file.open(fileName);
+//    file.seekp(std::ios::end);
+//    file << '\n' << parameterName << " = " << parameter << '\n';
+//    file.close();
+//    return;
+//}
+
+auto CreateFile(std::string const & pathToFolder, std::string const & foldername, std::string const & filename) -> std::ofstream
+{
+    std::string fname = pathToFolder + "/" + filename + ".txt";
+    std::ofstream file(fname.c_str());
+    file << "Some information about the parameter settings:" << '\n';
+    return file;
 }
