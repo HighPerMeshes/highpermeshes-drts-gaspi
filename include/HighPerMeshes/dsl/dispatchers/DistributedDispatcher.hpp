@@ -81,6 +81,7 @@ namespace HPM
             // which is a DAG where the vertices are a given MeshLoop and the edges
             // are the buffers used in the loop.
             auto [graph, dependency_to_map, loop_to_vertex] = GenerateDependencyGraph(mesh_loop_list);
+            
             auto const& mesh_loop(std::get<0>(mesh_loop_list));
             auto const& mesh(mesh_loop.entity_range.GetMesh());
             using MeshT = std::decay_t<decltype(mesh)>;
@@ -99,7 +100,7 @@ namespace HPM
 
             // Stores the correct procedure to generate a boundary buffer given a pointer to the base class of a buffer
             std::map<BufferBase<std::decay_t<decltype(mesh)>>*, std::function<std::unique_ptr<BoundaryBufferBase>(std::set<std::size_t>, Rank::Type, int)>> create_boundary_buffer;
-
+            
             // Here we use the abstract base type of a concrete buffer type to store a unique id for them as well
             // as a way how to generate halo and boundary buffers for them.
             std::size_t buffer_id = 0;
@@ -208,7 +209,7 @@ namespace HPM
                         // find the subset of entity indices
                         std::vector<std::size_t> dofs;
                         const auto& access_to_entity = dependency_map.L2PHasAccessToL2PByEntity(requested_L2, producing_L2);
-
+                        
                         // Global dofs.
                         {
                             const auto& indices = dependency.edge->template GetDofIndices<MeshT::CellDimension + 1>();
@@ -251,6 +252,7 @@ namespace HPM
                         {
                             boundary_buffers_map[requester_key][producer_key][dependency.edge].insert(dofs.begin(), dofs.end());
                         }
+
                     }
                 }
             }
