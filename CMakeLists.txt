@@ -7,8 +7,9 @@ list(INSERT CMAKE_MODULE_PATH 0 ${CMAKE_SOURCE_DIR}/cmake)
 set (CMAKE_CXX_STANDARD 17)
 set (CMAKE_BUILD_TYPE Release)
 set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -O3 -march=native -ftree-vectorize -ffast-math -Wall -Wextra -pedantic")
-set (BUILD_TESTS off)
-set (BUILD_EXAMPLES on)
+
+option (BUILD_TESTS "Build tests?" on)
+option (BUILD_EXAMPLES "Build examples?" on)
 
 # Create a library called "HighPerMeshesDRTS", also add an alias for the correct namespace
 add_library ( HighPerMeshesDRTS INTERFACE )
