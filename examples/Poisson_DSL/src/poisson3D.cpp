@@ -649,15 +649,15 @@ auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const 
         HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
         computeMatrixVecProdukt(mesh, d, bodyObj, materials, zBuffer, homDirichletNodes);
         
-	Vector z = Convert2(zBuffer);
-	r_scPr   = mv(r,r);
-        a        = r_scPr/mv(d,z);
+        Vector z = Convert2(zBuffer);
+        r_scPr   = scPr(r,r);
+        a        = r_scPr/scPr(d,z);
         x        = plus(x,msv(a,d));
         r        = minus(r, msv(a,z));
-        b        = mv(r,r)/r_scPr;
+        b        = scPr(r,r)/r_scPr;
         d        = plus(r,msv(b,d));
 
-	eps = std::sqrt(mv(r, r));
+        eps = std::sqrt(scPr(r, r));
         if (eps < tol)
             i = numSolverIt;
     }
