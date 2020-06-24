@@ -67,12 +67,6 @@ auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDsl
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecT>
 void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT & x, const int & numSolverIt, const float & tol);
 
-//template<typename BufferT, typename VecT>
-//auto Convert(const BufferT & rkBuffer, VecT & rkVec) -> VecT;
-
-//template<typename BufferT>
-//auto Convert2(const BufferT & rkBuffer) -> Vector;
-
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
@@ -322,14 +316,14 @@ void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT 
         AssembleMatrixVecProductPerVector(mesh, d, bodyObj, sBuffer);
 
         Vector s = Convert2(sBuffer);
-        r_scPr   = mv(r,r); // <r,r> (scalar or dot product)
-        a        = r_scPr/mv(d,s);
+        r_scPr   = scPr(r,r); // <r,r> (scalar product)
+        a        = r_scPr/scPr(d,s);
         x        = plus(x, msv(a, d));
         r        = minus(r, msv(a,s)); // r - a*s
-        b        = mv(r,r)/r_scPr; // (rNew*rNew)/(rOld*rOld)
+        b        = scPr(r,r)/r_scPr; // (rNew*rNew)/(rOld*rOld)
         d        = plus(r,msv(b,d)); // r + b*d
 
-        eps = std::sqrt(mv(r, r)); // sqrt(rNew*rNew)
+        eps = std::sqrt(scPr(r, r)); // sqrt(rNew*rNew)
         if (eps < tol)
             it = numSolverIt;
     }
