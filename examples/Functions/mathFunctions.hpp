@@ -42,7 +42,7 @@ inline auto matrixVecProduct(Matrix matrix, BufferT vec, int sizeVec) -> std::ve
 //! \brief scalar / dot product.
 //!
 template<typename VectorT1, typename VectorT2>
-float mv(const VectorT1 & a, const VectorT2 & b)
+float scPr(const VectorT1 & a, const VectorT2 & b)
 {
     float m = 0;
     for (int i = 0; i < a.size(); ++i)
