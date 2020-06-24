@@ -50,11 +50,12 @@ int main(int argc, char **argv)
 
     /** \brief read mesh file */
     const std::string meshFile = CFG.GetValue<std::string>("MeshFile"); //!< get the name of a user-specific mesh file
-    using Mesh = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>;
     //const Mesh mesh = Mesh::template CreateFromFile<HPM::auxiliary::GambitMeshFileReader>(meshFile, {1, 1});
     //const Mesh mesh = Mesh::template CreateFromFile<HPM::auxiliary::GambitMeshFileReader, HPM::mesh::MetisPartitioner>(meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()});
     HPM::mesh::MetisPartitioner partitioner;
     HPM::auxiliary::GambitMeshFileReader<CoordinateType, std::array<std::size_t, 4>> reader;
+    
+    using Mesh = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>;
     const Mesh mesh = Mesh::template CreateFromFile(meshFile, reader, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get(), partitioner);
 
     /** \brief read application-dependent discontinuous Galerkin's stuff */
@@ -170,7 +171,8 @@ int main(int argc, char **argv)
                         rhsE[n] += DG::LIFT[face_index][m][n] * flux_E;
                     });
                 });
-            });
+            }, HPM::internal::OpenMP_ForEachIncidence<3, 2> {}
+            );
 
         auto t2 = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double> duration = t2 - t1;
@@ -205,7 +207,8 @@ int main(int argc, char **argv)
                     rhsH[n] += -Curl(D, derivative_E); //!< first half of right-hand-side of fields
                     rhsE[n] += Curl(D, derivative_H);
                 });
-            });
+            }, HPM::internal::OpenMP_ForEachEntity<3> {}
+            );
 
         t2 = std::chrono::high_resolution_clock::now();
         duration = t2 - t1;
@@ -241,7 +244,8 @@ int main(int argc, char **argv)
                         rhsH[n] = 0.0; //TODO
                         rhsE[n] = 0.0;
                     });
-                });
+                }, HPM::internal::OpenMP_ForEachEntity<3> {}
+                );
 
         body.Execute(
             iterator::Range<size_t> { static_cast<std::size_t>(((finalTime - startTime) / timeStep) * 5) }, surfaceKernelLoop, volumeKernelLoop, rungeKuttaLoop);

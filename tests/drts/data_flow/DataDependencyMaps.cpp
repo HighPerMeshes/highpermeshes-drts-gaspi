@@ -29,7 +29,7 @@ struct MockPartitionedMesh
     static constexpr std::array<size_t, 4> L2s{0, 1, 2, 3};
 
     std::map<size_t, std::map<size_t, size_t>> dim2entity2local;
-    std::map<size_t, std::map<size_t, std::set<size_t>>> dim2local2entities;
+    std::map<size_t, std::map<size_t, std::vector<size_t>>> dim2local2entities;
 
     auto GetNumL1Partitions() const { return 2; };
 
