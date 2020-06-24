@@ -30,10 +30,12 @@
 #include <HighPerMeshes.hpp>
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshesDRTS.hpp>
+#include <HighPerMeshes/auxiliary/BufferOperations.hpp>
 //#include <../../parser/WriteLoop.hpp>
-
+#include <HighPerMeshes/drts/UsingGaspi.hpp>
 #include <../examples/Functions/outputWriter.hpp>
 #include <../examples/Functions/simplexGradients.hpp>
+#include <HighPerMeshes/auxiliary/ArrayOperations.hpp>
 
 #include <unistd.h>
 #define GetCurrentDir getcwd
@@ -87,20 +89,24 @@ int main(int argc, char** argv)
     const Mesh mesh      = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
+    std::size_t i = 0;
+    for (const auto& node : mesh.template GetEntities<0>())
+        std::cout << "node " << i++ << ": " << node.GetTopology().GetNodes() << std::endl;
+
     /*------------------------------------------(2) Set directory-,folder- and filename of result -------------------------------------------------------------*/
     char buff[FILENAME_MAX]; //create string buffer to hold path
     GetCurrentDir(buff, FILENAME_MAX);
     std::string currentWorkingDir(buff);
 
-    std::string foldername = "Test1";
-    std::string filename   = "test1_100x100Mesh_m1d1_";
+    std::string foldername = "Test_new";
+    std::string filename   = "Test_new_";
     //std::string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
     int numIt = 1000;
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
     //auto file = CreateFile(currentWorkingDir, foldername, parameterFilename);
-    SetStartValues(2, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
+    SetStartValues(1, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = std::ceil(std::sqrt(numNodes)/4);
@@ -108,7 +114,7 @@ int main(int argc, char** argv)
 
     //HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
     //CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 1>> u(mesh);
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
     CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
@@ -123,7 +129,8 @@ int main(int argc, char** argv)
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
     // read dofs
-//    const auto& dof_partitionU = u.GetDofPartition(0);
+    const auto& dof_partitionU = u.GetDofPartition(0);
+    std::cout<<"Num Global Dofs = "<<dof_partitionU.GetSize()<<std::endl;
 //    Vector vec; vec.resize(numNodes);
 //    for (std::size_t i = 0; i < dof_partitionU.GetSize(); ++i)
 //        vec[i] = dof_partitionU[i];
@@ -134,12 +141,31 @@ int main(int argc, char** argv)
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
     //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec, "resultU");
 
+    const std::size_t proc_id = hpm.gaspi_context.rank().get();
+
     // compute
-    for (int j = 0; j < numIt; ++j)
+    //HPM::UsingGaspi gaspi;
+    for (int j = 0; j < 1; ++j)
     {
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, body, u, w, lumpedMat, sigma, a, b, eps);
         FWEuler(u, u_deriv, h, body, mesh);
         FWEuler(w, w_deriv, h, body, mesh);
+        //AllGather<0>(u, gaspi);
+        const auto& u_gather = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+
+        std::size_t index = 0;
+        for (const auto& value : u_gather)
+            std::cout << index % numNodes << ", " << index++ << ": " << value << std::endl;
+
+        if (proc_id == 0) {
+        std::vector<float> u_total(numNodes);
+        const std::size_t num_buffers = u_gather.size ()/ numNodes;
+        for (std::size_t i = 0; i < numNodes; ++i)
+        {
+            u_total[i] = 0;
+            for (std::size_t k = 0; k < num_buffers; ++k)
+                u_total[i] += u_gather[k * numNodes + i];
+        }
 
         if ((j+1)%10 == 0)
         {
@@ -150,8 +176,9 @@ int main(int argc, char** argv)
 
             std::stringstream s; s << j+1;
             name = filename + s.str();
-            writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+            writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u_total, "resultU");
             //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec_u, "resultU");
+        }
         }
     }
 
@@ -192,10 +219,23 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
         w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
         w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
     }
+    else if (option == 3)
+    {
+        // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
+        h     = 0.4; // step size
+        a     = 0.1;
+        b     = 1e-4;
+        eps   = 1e-4;
+        sigma = -0.1;
+        u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
+        u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
+        w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+        w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+    }
     else
         printf("There is no option choosen for start value settings. Create your own option or choose one of the existing.");
 
-    // add parameter to .txt file
+    // add parameter to .txt file -> TODO: fix bug
 //    std::string fileName = "testParameterfile.txt";
 //    WriteParameterInfoIntoFile(file, fileName, h, "h");
 //    WriteParameterInfoIntoFile(file, fileName, a, "a");
@@ -355,7 +395,7 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
 //template<typename FileT, typename T, typename NameT, typename NameT2>
 //void WriteParameterInfoIntoFile(FileT& file, const NameT& fileName, const T& parameter, const NameT2& parameterName)
 //{
-//    // fix bug at this code
+//    // TODO: fix bug at this code
 //    file.open(fileName);
 //    file.seekp(std::ios::end);
 //    file << '\n' << parameterName << " = " << parameter << '\n';
