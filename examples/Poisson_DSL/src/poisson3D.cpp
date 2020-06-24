@@ -605,7 +605,9 @@ auto FindElement(const ElementT & element, const T & set) -> bool
     return false;
 }
 
-
+//!
+//! \brief Create residuum for cg-solver.
+//!
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
 BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials,
             const VecDslT & x0, const std::vector<int> & homDirichletNodes)
@@ -632,7 +634,9 @@ BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, 
     return r0;
 }
 
-
+//!
+//! \brief Conjugated gradient algorithm.
+//!
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
 auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, const int & numSolverIt, const float & tol,const std::vector<int> & homDirichletNodes)->Vector
 {
@@ -664,7 +668,9 @@ auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const 
     return x;
 }
 
-
+//!
+//! \brief Conjugated gradient algorithm (matrix-free).
+//!
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
 auto cgSolverMatFree(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, VecDslT & x, const int & numSolverIt,
                      const float & tol, const std::vector<int> & homDirichletNodes)->VecDslT
@@ -699,7 +705,10 @@ auto cgSolverMatFree(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj,
     return x;
 }
 
-
+//!
+//! \brief Compute matrix-vector product directly without assembling the whole stiffness matrix
+//! in advance (per rows of global stiffness matrix).
+//!
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
 void computeMatrixVecProdukt(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
                      BufferT & z, const std::vector<int> & homDirichletNodes)
@@ -722,7 +731,10 @@ void computeMatrixVecProdukt(const MeshT & mesh, const VectorT & dk, LoopbodyT b
     return;
 }
 
-
+//!
+//! \brief Compute matrix-vector product directly without assembling the whole stiffness matrix
+//! in advance (per scalars of global stiffnessmatrix).
+//!
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
 void GetMatrixVecProduct(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
                          BufferT & z, const std::vector<int> & homDirichletNodes)
@@ -777,7 +789,9 @@ void GetMatrixVecProduct(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyO
     return;
 }
 
-
+//!
+//! \brief Assemble rom of global stiffness matrix for function computeMatrixVecProdukt().
+//!
 template<typename NodeT, typename MeshT, typename PairT, typename BufferT>
 void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT & materialsPerCellId,
                              BufferT & rowGSM, const std::vector<int> & homDirichletNodes)
@@ -836,7 +850,6 @@ void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT &
         }
     }
 
-    //outputVec(rowGSM, "result of matrix free parts", 8);
     return;
 }
 
