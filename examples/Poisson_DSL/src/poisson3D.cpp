@@ -30,7 +30,10 @@
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshesDRTS.hpp>
 
-#include "poissonFunctions.hpp"
+#include <../examples/Functions/outputWriter.hpp>
+#include <../examples/Functions/simplexGradients.hpp>
+#include <../examples/Functions/solver.hpp>
+#include <../examples/Functions/mathFunctions.hpp>
 
 class DEBUG;
 using namespace HPM;
@@ -72,6 +75,32 @@ void CreateReducedGSM(const Matrix & GSM, Matrix & reducedGSM, const std::vector
 template<typename ElementT, typename T>
 auto FindElement(const ElementT & element, const T & set) -> bool;
 
+/*------------------------new functions------------------------------------*/
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials,
+                    const VecDslT & x0,const std::vector<int> & homDirichletNodes);
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
+auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, const int & numSolverIt, const float & tol,
+              const std::vector<int> & homDirichletNodes)->Vector;
+
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+auto cgSolverMatFree(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, VecDslT & x, const int & numSolverIt,
+                     const float & tol, const std::vector<int> & homDirichletNodes)->VecDslT;
+
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void computeMatrixVecProdukt(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                             BufferT & z, const std::vector<int> & homDirichletNodes);
+
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void GetMatrixVecProduct(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                         BufferT & z, const std::vector<int> & homDirichletNodes);
+
+template<typename NodeT, typename MeshT, typename PairT, typename BufferT>
+void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT & materialsPerCellId,
+                             BufferT & rowGSM, const std::vector<int> & homDirichletNodes);
+
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
@@ -95,7 +124,7 @@ int main(int argc, char** argv)
     const Mesh mesh      = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
                                          (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
     ReaderType reader;
-
+     std::cout<<"hallo2"<<std::endl;
     // read boundary conditions (e.g. in Amira files @6=boundary faces as node index set and @5=boundary condition as id)
     TupleBoundaries boundaryConditions = reader.ReadGroups<BoundaryFaceType, BoundaryType>(meshFile, "@6", "@5", true, false);
     Pair BCPerFaceId; CreateBoundaryConditionTuple(mesh, boundaryConditions, BCPerFaceId, true);
@@ -139,13 +168,38 @@ int main(int argc, char** argv)
     /*------------------------------------------(5a) Solve system using inverse: ------------------------------------------------------------------------------*/
     Matrix InvMat = invertMatrix(ReducedGSM);
     outputMat(InvMat, "inverse using gauß-jordan", InvMat.size(), InvMat[0].size());
-    auto solve1 = matrixVecProduct(InvMat,reducedRHS);
+    auto solve1 = matrixVecProduct(InvMat,reducedRHS,reducedRHS.size());
     outputVec(solve1,"result using inverse (gauß-jordan)", 4);
 
     /*------------------------------------------(5b) Solve system using Jacobi algorithm: ---------------------------------------------------------------------*/
     Vector xStart; xStart = {0,0,0,0};
     Vector x_jacob = JacobiSolver(ReducedGSM, reducedRHS, xStart, 31, reducedRHS.size());
     outputVec(x_jacob,"jacobi", x_jacob.size());
+
+    /*------NEW-----------------------------------------------------------------------*/
+    writeVTKOutput(mesh, "test", x_jacob, "jacobi", homDirichletNodes, hpm);
+
+    auto resultVec = cgSolver(mesh, rhs, body, materialsPerCellId, 30, 0.0001, homDirichletNodes);
+    //auto vec = matrixFreeSolver(mesh, rhs, 23, body, materialsPerCellId);
+    //outputVec(resultVec, "result of matrix free parts", 8);
+
+    int const numNodes = 8;//mesh.template GetNumEntities<0>;
+    HPM::dataType::Vec<float, numNodes> xk;
+    for (int i = 0; i < numNodes; ++i) {xk[i]=0;}
+
+    cgSolverMatFree(mesh, rhs, body, materialsPerCellId, xk, 3, 0.00001, homDirichletNodes);
+    outputVec(xk, "xk", numNodes);
+
+    // Open a file stream for each distributed context
+    /*std::ofstream file { std::string { "ResultCGPoisson_" } +  std::to_string(hpm.gaspi_context.rank().get()) + ".txt" };
+    auto AllNodes { mesh.GetEntityRange<0>() } ;
+    std::mutex mutex;
+
+    body.Execute(
+      iterator::Range{ 0 },
+      WriteLoop(mutex, file, AllNodes, xk, EveryNthStep(1))
+    );*/
+
 
     return 0;
 }
@@ -550,3 +604,252 @@ auto FindElement(const ElementT & element, const T & set) -> bool
             return true;
     return false;
 }
+
+//!
+//! \brief Create residuum for cg-solver.
+//!
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+BufferT GetResiduum(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials,
+            const VecDslT & x0, const std::vector<int> & homDirichletNodes)
+{
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> r0(mesh); //residuum
+
+    auto nodes { mesh.template GetEntityRange<0>() };
+    bodyObj.Execute(HPM::ForEachEntity(
+                  nodes,
+                  std::tuple(ReadWrite(Node(r0))),
+                  [&](auto const& node, const auto& iter, auto& lvs)
+    {
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rowGSM(mesh);
+    int nodeID = node.GetTopology().GetIndex(); // global index of node
+    GetRowOfStiffnessMatrix(node, mesh, materials, rowGSM, homDirichletNodes);
+
+    float val = 0;
+    for (int i = 0; i < rhs.GetSize(); ++i)
+        val += rowGSM[i]*x0[i];
+    r0[nodeID] = rhs[nodeID]-val;
+    }));
+
+    outputVec(r0, "r0", 8);
+    return r0;
+}
+
+//!
+//! \brief Conjugated gradient algorithm.
+//!
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT>
+auto cgSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, const int & numSolverIt, const float & tol,const std::vector<int> & homDirichletNodes)->Vector
+{
+    Vector x {0,0,0,0,0,0,0,0}; //start vector
+    auto rBuffer = rhs; // set residuum
+    Vector r     = Convert2(rBuffer);
+    Vector d     = r; //search direction
+    float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
+    
+    bool abortCriterium = false;
+
+    for (int i = 0; i < numSolverIt; ++i)
+    {
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
+        computeMatrixVecProdukt(mesh, d, bodyObj, materials, zBuffer, homDirichletNodes);
+        
+        Vector z = Convert2(zBuffer);
+        r_scPr   = scPr(r,r);
+        a        = r_scPr/scPr(d,z);
+        x        = plus(x,msv(a,d));
+        r        = minus(r, msv(a,z));
+        b        = scPr(r,r)/r_scPr;
+        d        = plus(r,msv(b,d));
+
+        eps = std::sqrt(scPr(r, r));
+        if (eps < tol)
+            i = numSolverIt;
+    }
+    return x;
+}
+
+//!
+//! \brief Conjugated gradient algorithm (matrix-free).
+//!
+template<typename MeshT, typename BufferT, typename LoopbodyT, typename PairT, typename VecDslT>
+auto cgSolverMatFree(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, const PairT & materials, VecDslT & x, const int & numSolverIt,
+                     const float & tol, const std::vector<int> & homDirichletNodes)->VecDslT
+{
+    int const size = 8;
+    using VecDSL = HPM::dataType::Vec<float,size>;
+    float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
+
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rBuffer(mesh);
+    GetMatrixVecProduct(mesh, x, bodyObj, materials, rBuffer, homDirichletNodes);//A*x
+
+    VecDSL r; Convert(rhs,r);
+    VecDSL d = r; //search direction
+
+    for (int it = 0; it < numSolverIt; ++it)
+    {
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
+        GetMatrixVecProduct(mesh, d, bodyObj, materials, zBuffer, homDirichletNodes);// A*d
+        VecDSL z; Convert(zBuffer, z);
+        r_scPr = r * r;
+        a      = r_scPr/(d*z);
+        x      = x + (a*d);
+        r      = r - (a*z); 
+        b      = (r*r)/r_scPr;
+        d      = r + (b * d);
+
+        eps = std::sqrt(r * r);
+        if (eps < tol)
+            it = numSolverIt;
+
+    }
+    return x;
+}
+
+//!
+//! \brief Compute matrix-vector product directly without assembling the whole stiffness matrix
+//! in advance (per rows of global stiffness matrix).
+//!
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void computeMatrixVecProdukt(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                     BufferT & z, const std::vector<int> & homDirichletNodes)
+{
+    auto nodes { mesh.template GetEntityRange<0>() };
+
+    bodyObj.Execute(HPM::ForEachEntity(
+                  nodes,
+                  std::tuple(ReadWrite(Node(z))),
+                  [&](auto const& node, const auto& iter, auto& lvs)
+    {
+        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rowGSM(mesh);
+        int nodeID = node.GetTopology().GetIndex(); // global index of node
+        GetRowOfStiffnessMatrix(node, mesh, materials, rowGSM, homDirichletNodes);
+
+        for (int i = 0; i < z.GetSize(); ++i)
+            z[nodeID] += rowGSM[i]*dk[i];
+    }));
+
+    return;
+}
+
+//!
+//! \brief Compute matrix-vector product directly without assembling the whole stiffness matrix
+//! in advance (per scalars of global stiffnessmatrix).
+//!
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename PairT, typename BufferT>
+void GetMatrixVecProduct(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyObj, const PairT & materials,
+                         BufferT & z, const std::vector<int> & homDirichletNodes)
+{
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> zBuffer(mesh);
+    auto cells { mesh.template GetEntityRange<3>() };
+    bodyObj.Execute(HPM::ForEachEntity(
+                  cells,
+                  std::tuple(ReadWrite(Node(z))),
+                  [&](auto const& cell, const auto& iter, auto& lvs)
+    {
+        const int nrows = dim+1; const int ncols = dim+1;
+        const auto& gradients = GetGradientsDSL();
+        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+        auto tmp   = cell.GetGeometry().GetJacobian();
+        float detJ = tmp.Determinant(); detJ = std::abs(detJ);
+        auto inv   = tmp.Invert();
+        auto invJT = inv.Transpose();
+
+        // Material information is integrate as diffusion tensor D = sigma * I with sigma as random scalar value.
+        // For example: sigma = 3 if material id is 1 and sigma = 6 if material id is 2
+        float sigma; float gamma = 100;
+        if (materials[cell.GetTopology().GetIndex()].second == 1) sigma = 3;
+        else if (materials[cell.GetTopology().GetIndex()].second == 2) sigma = 6;
+        else sigma = 1; // default
+
+        for (int col = 0; col < ncols; ++col)
+        {
+            bool DirichletNode = false;
+            if (FindElement(nodeIdSet[col], homDirichletNodes))
+                DirichletNode = true; //z[nodeIdSet[col]] += gamma;
+
+            auto gc = invJT*gradients[col]*sigma;
+            for (int row = 0; row < nrows; ++row)
+            {
+                bool DirichletNode2 = false;
+                if (FindElement(nodeIdSet[row], homDirichletNodes))
+                    DirichletNode2 = true; //z[nodeIdSet[col]] += gamma;
+
+                if ((DirichletNode) || (DirichletNode2))
+                    z[nodeIdSet[col]] += 0;
+                else
+                {
+                    auto gr            = invJT* gradients[row];
+                    z[nodeIdSet[col]] += detJ/6 * (gc*gr) * dk[nodeIdSet[row]];
+                }
+            }
+        }
+    }));
+
+    return;
+}
+
+//!
+//! \brief Assemble rom of global stiffness matrix for function computeMatrixVecProdukt().
+//!
+template<typename NodeT, typename MeshT, typename PairT, typename BufferT>
+void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT & materialsPerCellId,
+                             BufferT & rowGSM, const std::vector<int> & homDirichletNodes)
+{
+    int nodeID = node.GetTopology().GetIndex(); // global index of node
+    bool DirichletNode = false;
+    if (FindElement(nodeID, homDirichletNodes))
+         DirichletNode = true;
+
+    if (DirichletNode)
+        for (int i = 0; i < 8/*mesh.template GetNumEntities<0>*/; ++i)
+    {
+        if (i == nodeID)
+            rowGSM[i] = 1;
+        else
+            rowGSM[i] = 0;
+    }
+    else
+    {
+        const auto& containing_cells = node.GetTopology().GetAllContainingCells();
+        for (const auto& cell : containing_cells)
+        {
+            const int nrows = dim+1;
+            const auto& gradients = GetGradientsDSL();
+            const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+            // To-Do: find better syntax
+            int localPositionOfNode;
+            for (int i = 0; i < dim+1; ++i)
+                if (nodeIdSet[i] == nodeID)
+                    localPositionOfNode = i;
+
+            auto tmp   = cell.GetGeometry().GetJacobian();
+            float detJ = tmp.Determinant(); detJ = std::abs(detJ);
+            auto inv   = tmp.Invert();
+            auto invJT = inv.Transpose();
+
+            // Material information is integrate as diffusion tensor D = v * I with v as random scalar value.
+            // For example: v = 3 if material id is 1 and v = 6 if material id is 2
+            float value;
+            if (materialsPerCellId[cell.GetTopology().GetIndex()].second == 1)      value = 3;
+            else if (materialsPerCellId[cell.GetTopology().GetIndex()].second == 2) value = 6;
+            else value = 1; // default
+
+            auto gc = invJT * gradients[localPositionOfNode] * value * (detJ/6);
+            for (int row = 0; row < nrows; ++row)
+            {
+        if (FindElement(nodeIdSet[row], homDirichletNodes))
+            rowGSM[nodeIdSet[row]] = 0;
+        else
+        {
+                    auto gr                 = invJT* gradients[row];
+                    rowGSM[nodeIdSet[row]] += gc*gr;
+        }
+            }
+        }
+    }
+
+    return;
+}
+

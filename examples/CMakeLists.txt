@@ -56,3 +56,4 @@ Experiment(volume_kernel_omp)
 
 
 add_subdirectory(Poisson_DSL)
+add_subdirectory(Monodomain_DSL)
