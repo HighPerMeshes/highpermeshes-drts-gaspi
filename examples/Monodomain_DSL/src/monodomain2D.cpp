@@ -125,22 +125,6 @@ int main(int argc, char** argv)
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
-    // read dofs (TO-DO: find bug)
-    /*-------------------------#1 BUG with output of distributed values, but why? Wrong installation of gaspi?-------------------------------------------------*/
-//    const auto& dof_partitionU = u.GetDofPartition(0);
-//    std::cout<<"Num Global Dofs = "<<dof_partitionU.GetSize()<<std::endl;
-
-//    Vector vec; vec.resize(numNodes);
-//    for (std::size_t i = 0; i < dof_partitionU.GetSize(); ++i)
-//        vec[i] = dof_partitionU[i];
-
-//    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec, "resultU");
-
-//    const std::size_t proc_id = hpm.gaspi_context.rank().get();
-
-//    HPM::UsingGaspi gaspi;
-    /*-------------------------#1 BUG -------------------------------------------------------------------------------------------------------------------------*/
-
     // check if startvector was set correctly by creating output file at time step zero
     std::stringstream s; s << 0;
     std::string name = filename + s.str();
@@ -152,37 +136,14 @@ int main(int argc, char** argv)
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, body, u, w, lumpedMat, sigma, a, b, eps);
         FWEuler(u, u_deriv, h, body, mesh, true);
         FWEuler(w, w_deriv, h, body, mesh, false);
-//        const auto& u_gather = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm)); // #1
 
-//        std::size_t index = 0; // #1
-//        for (const auto& value : u_gather) // #1
-//            std::cout << index % numNodes << ", " << index++ << ": " << value << std::endl; // #1
+        if ((j+1)%10 == 0)
+        {
 
-//        if (proc_id == 0)// #1
-//        {
-//            std::vector<float> u_total(numNodes); // #1
-//            const std::size_t num_buffers = u_gather.size ()/ numNodes; // #1
-
-//            for (std::size_t i = 0; i < numNodes; ++i)// #1
-//            {
-//                u_total[i] = 0;
-//                for (std::size_t k = 0; k < num_buffers; ++k)
-//                    u_total[i] += u_gather[k * numNodes + i];
-//            }// #1
-
-            if ((j+1)%10 == 0)
-            {
-//                const auto& dof_partition = u.GetDofPartition(0);// #1
-//                Vector vec_u; vec_u.resize(dof_partition.GetSize());// #1
-//                for (std::size_t i = 0; i < dof_partition.GetSize(); ++i)// #1
-//                    vec_u[i] = dof_partition[i];// #1
-
-                std::stringstream s; s << j+1;
-                name = filename + s.str();
-                //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u_total, "resultU"); // #1
-                //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec_u, "resultU"); // #1
-            }
-        //}
+            std::stringstream s; s << j+1;
+            name = filename + s.str();
+            writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+        }
     }
 
     return 0;
