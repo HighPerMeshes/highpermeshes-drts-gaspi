@@ -23,6 +23,7 @@
 
 #ifndef MONODOMAIN_CPP
 
+#include <mutex>
 #include <fstream>
 #include <iostream>
 #include <tuple>
@@ -31,11 +32,12 @@
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshesDRTS.hpp>
 #include <HighPerMeshes/auxiliary/BufferOperations.hpp>
-//#include <../../parser/WriteLoop.hpp>
 #include <HighPerMeshes/drts/UsingGaspi.hpp>
 #include <../examples/Functions/outputWriter.hpp>
 #include <../examples/Functions/simplexGradients.hpp>
 #include <HighPerMeshes/auxiliary/ArrayOperations.hpp>
+
+#include <../build/highpermeshes-dsl/utility/output/WriteLoop.hpp>
 
 #include <unistd.h>
 #define GetCurrentDir getcwd
@@ -71,7 +73,7 @@ template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT & body, BufferT & sBuffer);
 
 template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
-void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh);
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, const bool & optionWrite);
 
 template<typename BufferT, typename BufferTGlobal, typename MeshT, typename LoopBodyT>
 void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, LoopBodyT & body,
@@ -81,6 +83,7 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
+
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
     HPM::drts::Runtime<HPM::GetDistributedBuffer<>, HPM::UsingDistributedDevices> hpm({}, std::forward_as_tuple(argc, argv));
     HPM::DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
@@ -89,21 +92,17 @@ int main(int argc, char** argv)
     const Mesh mesh      = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
-    std::size_t i = 0;
-    for (const auto& node : mesh.template GetEntities<0>())
-        std::cout << "node " << i++ << ": " << node.GetTopology().GetNodes() << std::endl;
-
     /*------------------------------------------(2) Set directory-,folder- and filename of result -------------------------------------------------------------*/
     char buff[FILENAME_MAX]; //create string buffer to hold path
     GetCurrentDir(buff, FILENAME_MAX);
     std::string currentWorkingDir(buff);
 
-    std::string foldername = "Test_new";
-    std::string filename   = "Test_new_";
+    std::string foldername = "TestForDistributedOutput";
+    std::string filename   = "TestForDistributedOutput_";
     //std::string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt = 1000;
+    int numIt = 2;//1000;
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
     //auto file = CreateFile(currentWorkingDir, foldername, parameterFilename);
     SetStartValues(1, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
@@ -112,8 +111,6 @@ int main(int argc, char** argv)
     int maxX = std::ceil(std::sqrt(numNodes)/4);
     int maxY = std::ceil(std::sqrt(numNodes));
 
-    //HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
-    //CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
     CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
 
@@ -128,58 +125,64 @@ int main(int argc, char** argv)
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
-    // read dofs
-    const auto& dof_partitionU = u.GetDofPartition(0);
-    std::cout<<"Num Global Dofs = "<<dof_partitionU.GetSize()<<std::endl;
+    // read dofs (TO-DO: find bug)
+    /*-------------------------#1 BUG with output of distributed values, but why? Wrong installation of gaspi?-------------------------------------------------*/
+//    const auto& dof_partitionU = u.GetDofPartition(0);
+//    std::cout<<"Num Global Dofs = "<<dof_partitionU.GetSize()<<std::endl;
+
 //    Vector vec; vec.resize(numNodes);
 //    for (std::size_t i = 0; i < dof_partitionU.GetSize(); ++i)
 //        vec[i] = dof_partitionU[i];
+
+//    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec, "resultU");
+
+//    const std::size_t proc_id = hpm.gaspi_context.rank().get();
+
+//    HPM::UsingGaspi gaspi;
+    /*-------------------------#1 BUG -------------------------------------------------------------------------------------------------------------------------*/
 
     // check if startvector was set correctly by creating output file at time step zero
     std::stringstream s; s << 0;
     std::string name = filename + s.str();
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
-    //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec, "resultU");
-
-    const std::size_t proc_id = hpm.gaspi_context.rank().get();
 
     // compute
-    //HPM::UsingGaspi gaspi;
     for (int j = 0; j < 1; ++j)
     {
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, body, u, w, lumpedMat, sigma, a, b, eps);
-        FWEuler(u, u_deriv, h, body, mesh);
-        FWEuler(w, w_deriv, h, body, mesh);
-        //AllGather<0>(u, gaspi);
-        const auto& u_gather = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+        FWEuler(u, u_deriv, h, body, mesh, true);
+        FWEuler(w, w_deriv, h, body, mesh, false);
+//        const auto& u_gather = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm)); // #1
 
-        std::size_t index = 0;
-        for (const auto& value : u_gather)
-            std::cout << index % numNodes << ", " << index++ << ": " << value << std::endl;
+//        std::size_t index = 0; // #1
+//        for (const auto& value : u_gather) // #1
+//            std::cout << index % numNodes << ", " << index++ << ": " << value << std::endl; // #1
 
-        if (proc_id == 0) {
-        std::vector<float> u_total(numNodes);
-        const std::size_t num_buffers = u_gather.size ()/ numNodes;
-        for (std::size_t i = 0; i < numNodes; ++i)
-        {
-            u_total[i] = 0;
-            for (std::size_t k = 0; k < num_buffers; ++k)
-                u_total[i] += u_gather[k * numNodes + i];
-        }
+//        if (proc_id == 0)// #1
+//        {
+//            std::vector<float> u_total(numNodes); // #1
+//            const std::size_t num_buffers = u_gather.size ()/ numNodes; // #1
 
-        if ((j+1)%10 == 0)
-        {
-//            const auto& dof_partition = u.GetDofPartition(0);
-//            Vector vec_u; vec_u.resize(dof_partition.GetSize());
-//            for (std::size_t i = 0; i < dof_partition.GetSize(); ++i)
-//                vec_u[i] = dof_partition[i];
+//            for (std::size_t i = 0; i < numNodes; ++i)// #1
+//            {
+//                u_total[i] = 0;
+//                for (std::size_t k = 0; k < num_buffers; ++k)
+//                    u_total[i] += u_gather[k * numNodes + i];
+//            }// #1
 
-            std::stringstream s; s << j+1;
-            name = filename + s.str();
-            writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u_total, "resultU");
-            //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec_u, "resultU");
-        }
-        }
+            if ((j+1)%10 == 0)
+            {
+//                const auto& dof_partition = u.GetDofPartition(0);// #1
+//                Vector vec_u; vec_u.resize(dof_partition.GetSize());// #1
+//                for (std::size_t i = 0; i < dof_partition.GetSize(); ++i)// #1
+//                    vec_u[i] = dof_partition[i];// #1
+
+                std::stringstream s; s << j+1;
+                name = filename + s.str();
+                //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u_total, "resultU"); // #1
+                //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, vec_u, "resultU"); // #1
+            }
+        //}
     }
 
     return 0;
@@ -354,16 +357,34 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 //! \brief Forward (explicit) Euler algorithm.
 //!
 template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
-void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh)
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, const bool & optionWrite)
 {
+    std::mutex mutex;
+    std::ofstream fstream { "output.txt" };
+
     auto vertices {mesh.template GetEntityRange<0>()};
-    body.Execute(HPM::ForEachEntity(
-                  vertices,
-                  std::tuple(ReadWrite(Node(vecOld))),
-                  [&](auto const& vertex, const auto& iter, auto& lvs)
-    {
-        vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
-    }));
+
+    if (optionWrite) {
+        body.Execute(
+            ForEachEntity(
+            vertices,
+            std::tuple(ReadWrite(Node(vecOld))),
+            [&](auto const& vertex, const auto& iter, auto& lvs) {
+                vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
+            }),
+            WriteLoop(mutex, fstream, vertices, vecOld)
+        );
+    }
+    else {
+        body.Execute(
+            ForEachEntity(
+            vertices,
+            std::tuple(ReadWrite(Node(vecOld))),
+            [&](auto const& vertex, const auto& iter, auto& lvs) {
+                vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
+            }));
+    }
+
     return;
 }
 
