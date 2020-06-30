@@ -72,8 +72,12 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT & body, BufferT & lu
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT & body, BufferT & sBuffer);
 
-template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
-void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, const bool & optionWrite);
+//template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
+//void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, const bool & optionWrite);
+
+template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT, typename MutexT, typename OfstreamT>
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, 
+             const bool & optionWrite, MutexT & mutex, OfstreamT & fstream);
 
 template<typename BufferT, typename BufferTGlobal, typename MeshT, typename LoopBodyT>
 void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, LoopBodyT & body,
@@ -102,7 +106,7 @@ int main(int argc, char** argv)
     //std::string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt = 2;//1000;
+    int numIt = 10;//1000;
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
     //auto file = CreateFile(currentWorkingDir, foldername, parameterFilename);
     SetStartValues(1, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
@@ -130,20 +134,23 @@ int main(int argc, char** argv)
     std::string name = filename + s.str();
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
 
+    std::mutex mutex;
+    std::ofstream fstream { "testDist.txt" };
+
     // compute
-    for (int j = 0; j < 1; ++j)
+    for (int j = 0; j < numIt; ++j)
     {
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, body, u, w, lumpedMat, sigma, a, b, eps);
-        FWEuler(u, u_deriv, h, body, mesh, true);
-        FWEuler(w, w_deriv, h, body, mesh, false);
+        FWEuler(u, u_deriv, h, body, mesh, true, mutex, fstream);
+        FWEuler(w, w_deriv, h, body, mesh, false, mutex, fstream);
 
-        if ((j+1)%10 == 0)
-        {
+        //if ((j+1)%10 == 0)
+        //{
 
             std::stringstream s; s << j+1;
             name = filename + s.str();
             writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
-        }
+        //}
     }
 
     return 0;
@@ -317,11 +324,12 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 //!
 //! \brief Forward (explicit) Euler algorithm.
 //!
-template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
-void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, const bool & optionWrite)
+template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT, typename MutexT, typename OfstreamT>
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, 
+	     const bool & optionWrite, MutexT & mutex, OfstreamT & fstream)
 {
-    std::mutex mutex;
-    std::ofstream fstream { "output.txt" };
+    //std::mutex mutex;
+    //std::ofstream fstream { "test.txt" };
 
     auto vertices {mesh.template GetEntityRange<0>()};
 
@@ -332,6 +340,7 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Loopbo
             std::tuple(ReadWrite(Node(vecOld))),
             [&](auto const& vertex, const auto& iter, auto& lvs) {
                 vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
+		std::cout<<"u :    "<< vecOld[vertex.GetTopology().GetIndex()] <<std::endl;
             }),
             WriteLoop(mutex, fstream, vertices, vecOld)
         );
