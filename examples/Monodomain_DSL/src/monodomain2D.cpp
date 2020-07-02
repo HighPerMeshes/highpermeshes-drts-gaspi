@@ -48,11 +48,11 @@ using namespace ::HPM::auxiliary;
 using namespace std;
 
 template <size_t ...I>
-using Dofs           = HPM::dataType::Dofs<I...>;
+using Dofs           = dataType::Dofs<I...>;
 using Vector         = vector<float>;
 using Matrix         = vector<Vector>;
-using CoordinateType = HPM::dataType::Vec<float,2>;
-using Mesh           = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>;
+using CoordinateType = dataType::Vec<float,2>;
+using Mesh           = mesh::PartitionedMesh<CoordinateType, entity::Simplex>;
 constexpr int dim    = Mesh::CellDimension;
 
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
@@ -94,11 +94,11 @@ int main(int argc, char** argv)
 {
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
-    HPM::drts::Runtime<HPM::GetDistributedBuffer<>, HPM::UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
-    HPM::DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
-    HPM::auxiliary::ConfigParser CFG("config.cfg");
+    drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
+    DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
+    ConfigParser CFG("config.cfg");
     string meshFile = CFG.GetValue<string>("MeshFile");
-    const Mesh mesh      = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
+    const Mesh mesh      = Mesh::template CreateFromFile<AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
     /*------------------------------------------(2) Set directory-,folder- and filename of result -------------------------------------------------------------*/
@@ -120,18 +120,18 @@ int main(int argc, char** argv)
     int maxX = ceil(sqrt(numNodes)/4);
     int maxY = ceil(sqrt(numNodes));
 
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
     CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
 
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
     CreateStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
 
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u_deriv(mesh);
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w_deriv(mesh);
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> f(mesh);
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u_deriv(mesh);
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w_deriv(mesh);
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0>> f(mesh);
 
     /*------------------------------------------(4) Create monodomain problem ---------------------------------------------------------------------------------*/
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
     // check if startvector was set correctly by creating output file at time step zero
@@ -237,7 +237,7 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
 {
     auto nodes { mesh.template GetEntityRange<0>() };
 
-    body.Execute(HPM::ForEachEntity(
+    body.Execute(ForEachEntity(
                   nodes,
                   tuple(Read(Node(startVec))),
                   [&](auto const& node, const auto& iter, auto& lvs)
@@ -259,12 +259,12 @@ template<typename MeshT, typename LoopBodyT, typename BufferT>
 void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT & body, BufferT & lumpedMat)
 {
     auto cells {mesh.template GetEntityRange<2>()};
-    body.Execute(HPM::ForEachEntity(
+    body.Execute(ForEachEntity(
                         cells,
                         tuple(ReadWrite(Node(lumpedMat))),
                         [&](auto const& cell, const auto& iter, auto& lvs)
     {
-        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(get<0>(lvs));
+        auto& lumpedMat = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
         auto tmp        = cell.GetGeometry().GetJacobian();
         float detJ      = abs(tmp.Determinant());
 
@@ -290,7 +290,7 @@ template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT & body, BufferT & sBuffer)
 {
     auto cells { mesh.template GetEntityRange<2>() };
-    body.Execute(HPM::ForEachEntity(
+    body.Execute(ForEachEntity(
                   cells,
                   tuple(ReadWrite(Node(sBuffer))),
                   [&](auto const& cell, const auto& iter, auto& lvs)
@@ -378,11 +378,11 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
                              const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
                              const float & a, const float & b, const float & eps)
 {
-    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
     AssembleMatrixVecProduct2D(mesh, u, body, s);
 
     auto vertices {mesh.template GetEntityRange<0>()};
-    body.Execute(HPM::ForEachEntity(vertices, tuple(
+    body.Execute(ForEachEntity(vertices, tuple(
                                     ReadWrite(Node(f)),/*Read*/Write(Node(u_deriv)),/*Read*/Write(Node(w_deriv))),
                                     [&](auto const& vertex, const auto& iter, auto& lvs)
     {
