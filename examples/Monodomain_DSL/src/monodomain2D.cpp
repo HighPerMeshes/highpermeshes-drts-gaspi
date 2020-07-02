@@ -45,22 +45,24 @@
 class DEBUG;
 using namespace HPM;
 using namespace ::HPM::auxiliary;
-template <std::size_t ...I>
+using namespace std;
+
+template <size_t ...I>
 using Dofs           = HPM::dataType::Dofs<I...>;
-using Vector         = std::vector<float>;
-using Matrix         = std::vector<Vector>;
+using Vector         = vector<float>;
+using Matrix         = vector<Vector>;
 using CoordinateType = HPM::dataType::Vec<float,2>;
 using Mesh           = HPM::mesh::PartitionedMesh<CoordinateType, HPM::entity::Simplex>;
 constexpr int dim    = Mesh::CellDimension;
 
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
-auto CreateFile(std::string const & pathToFolder, std::string const & foldername, std::string const & filename) -> std::ofstream;
+auto CreateFile(string const & pathToFolder, string const & foldername, string const & filename) -> ofstream;
 
 //template<typename FileT, typename T, typename NameT, typename NameT2>
 //void WriteParameterInfoIntoFile(FileT& file, const NameT& fileName, const T& parameter, const NameT2& parameterName);
 
 void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*,
-                    std::ofstream & file*/);
+                    ofstream & file*/);
 
 template<typename MeshT, typename BufferT, typename LoopBodyT>
 void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight,
@@ -84,26 +86,29 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
                              const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
                              const float & a, const float & b, const float & eps);
 
+template<typename ArrayT>
+void WriteFStreamToArray(const ofstream & fstream, ArrayT & array);
+
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
-    HPM::drts::Runtime<HPM::GetDistributedBuffer<>, HPM::UsingDistributedDevices> hpm({}, std::forward_as_tuple(argc, argv));
+    HPM::drts::Runtime<HPM::GetDistributedBuffer<>, HPM::UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
     HPM::DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
     HPM::auxiliary::ConfigParser CFG("config.cfg");
-    std::string meshFile = CFG.GetValue<std::string>("MeshFile");
+    string meshFile = CFG.GetValue<string>("MeshFile");
     const Mesh mesh      = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
                            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
     /*------------------------------------------(2) Set directory-,folder- and filename of result -------------------------------------------------------------*/
     char buff[FILENAME_MAX]; //create string buffer to hold path
     GetCurrentDir(buff, FILENAME_MAX);
-    std::string currentWorkingDir(buff);
+    string currentWorkingDir(buff);
 
-    std::string foldername = "TestForDistributedOutput";
-    std::string filename   = "TestForDistributedOutput_";
-    //std::string parameterFilename = "testParameterfile";
+    string foldername = "TestForDistributedOutput";
+    string filename   = "TestForDistributedOutput_";
+    //string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
     int numIt = 10;//1000;
@@ -112,8 +117,8 @@ int main(int argc, char** argv)
     SetStartValues(1, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
 
     int numNodes = mesh.template GetNumEntities<0>();
-    int maxX = std::ceil(std::sqrt(numNodes)/4);
-    int maxY = std::ceil(std::sqrt(numNodes));
+    int maxX = ceil(sqrt(numNodes)/4);
+    int maxY = ceil(sqrt(numNodes));
 
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
     CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
@@ -130,24 +135,31 @@ int main(int argc, char** argv)
     AssembleLumpedMassMatrix(mesh, body, lumpedMat);
 
     // check if startvector was set correctly by creating output file at time step zero
-    std::stringstream s; s << 0;
-    std::string name = filename + s.str();
+    stringstream s; s << 0;
+    string name = filename + s.str();
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
 
-    std::mutex mutex;
-    std::ofstream fstream { "testDist.txt" };
+    mutex mtx;
+    //ofstream fstream { "testDist.txt" };
 
     // compute
     for (int j = 0; j < numIt; ++j)
     {
+        stringstream s; s << j+1;
+        string distFileName = "testDist" + s.str() + ".txt";
+        ofstream fstream {distFileName};
+
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, body, u, w, lumpedMat, sigma, a, b, eps);
-        FWEuler(u, u_deriv, h, body, mesh, true, mutex, fstream);
-        FWEuler(w, w_deriv, h, body, mesh, false, mutex, fstream);
+        FWEuler(u, u_deriv, h, body, mesh, true, mtx, fstream);
+        FWEuler(w, w_deriv, h, body, mesh, false, mtx, fstream);
+
+        Vector array; array.resize(numNodes);
+        WriteFStreamToArray(fstream, array);
 
         //if ((j+1)%10 == 0)
         //{
 
-            std::stringstream s; s << j+1;
+            //stringstream s; s << j+1;
             name = filename + s.str();
             writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
         //}
@@ -162,7 +174,7 @@ int main(int argc, char** argv)
 //!
 //! \brief Set start settings.
 //!
-void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*, std::ofstream& file*/)
+void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*, ofstream& file*/)
 {
     if (option == 1)
     {
@@ -207,7 +219,7 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
         printf("There is no option choosen for start value settings. Create your own option or choose one of the existing.");
 
     // add parameter to .txt file -> TODO: fix bug
-//    std::string fileName = "testParameterfile.txt";
+//    string fileName = "testParameterfile.txt";
 //    WriteParameterInfoIntoFile(file, fileName, h, "h");
 //    WriteParameterInfoIntoFile(file, fileName, a, "a");
 //    WriteParameterInfoIntoFile(file, fileName, b, "b");
@@ -227,7 +239,7 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
 
     body.Execute(HPM::ForEachEntity(
                   nodes,
-                  std::tuple(Read(Node(startVec))),
+                  tuple(Read(Node(startVec))),
                   [&](auto const& node, const auto& iter, auto& lvs)
     {
         auto coords = node.GetTopology().GetVertices();
@@ -249,12 +261,12 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT & body, BufferT & lu
     auto cells {mesh.template GetEntityRange<2>()};
     body.Execute(HPM::ForEachEntity(
                         cells,
-                        std::tuple(ReadWrite(Node(lumpedMat))),
+                        tuple(ReadWrite(Node(lumpedMat))),
                         [&](auto const& cell, const auto& iter, auto& lvs)
     {
-        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(get<0>(lvs));
         auto tmp        = cell.GetGeometry().GetJacobian();
-        float detJ      = std::abs(tmp.Determinant());
+        float detJ      = abs(tmp.Determinant());
 
         for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
         {
@@ -280,7 +292,7 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
     auto cells { mesh.template GetEntityRange<2>() };
     body.Execute(HPM::ForEachEntity(
                   cells,
-                  std::tuple(ReadWrite(Node(sBuffer))),
+                  tuple(ReadWrite(Node(sBuffer))),
                   [&](auto const& cell, const auto& iter, auto& lvs)
     {
         constexpr int nrows = dim+1;
@@ -289,18 +301,18 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
         const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
 
         const auto& tmp  = cell.GetGeometry().GetJacobian();
-        const float detJ = std::abs(tmp.Determinant());
+        const float detJ = abs(tmp.Determinant());
 
         const auto& inv   = tmp.Invert();
         const auto& invJT = inv.Transpose();
 
         // separate GATHER
-        std::array<float, nrows> _d;
+        array<float, nrows> _d;
         for (int row = 0; row < nrows; ++row)
             _d[row] = d[nodeIdSet[row]];
 
         // accumulate into contiguous block of memory
-        std::array<float, ncols> result{};
+        array<float, ncols> result{};
 
         float val      = detJ * 0.5;
         for (int col = 0; col < ncols; ++col)
@@ -328,8 +340,8 @@ template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT,
 void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, 
 	     const bool & optionWrite, MutexT & mutex, OfstreamT & fstream)
 {
-    //std::mutex mutex;
-    //std::ofstream fstream { "test.txt" };
+    //mutex mtx;
+    //ofstream fstream { "test.txt" };
 
     auto vertices {mesh.template GetEntityRange<0>()};
 
@@ -337,10 +349,10 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Loopbo
         body.Execute(
             ForEachEntity(
             vertices,
-            std::tuple(ReadWrite(Node(vecOld))),
+            tuple(ReadWrite(Node(vecOld))),
             [&](auto const& vertex, const auto& iter, auto& lvs) {
                 vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
-		std::cout<<"u :    "<< vecOld[vertex.GetTopology().GetIndex()] <<std::endl;
+        cout<<"u :    "<< vecOld[vertex.GetTopology().GetIndex()] <<endl;
             }),
             WriteLoop(mutex, fstream, vertices, vecOld)
         );
@@ -349,7 +361,7 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Loopbo
         body.Execute(
             ForEachEntity(
             vertices,
-            std::tuple(ReadWrite(Node(vecOld))),
+            tuple(ReadWrite(Node(vecOld))),
             [&](auto const& vertex, const auto& iter, auto& lvs) {
                 vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
             }));
@@ -370,7 +382,7 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
     AssembleMatrixVecProduct2D(mesh, u, body, s);
 
     auto vertices {mesh.template GetEntityRange<0>()};
-    body.Execute(HPM::ForEachEntity(vertices, std::tuple(
+    body.Execute(HPM::ForEachEntity(vertices, tuple(
                                     ReadWrite(Node(f)),/*Read*/Write(Node(u_deriv)),/*Read*/Write(Node(w_deriv))),
                                     [&](auto const& vertex, const auto& iter, auto& lvs)
     {
@@ -388,16 +400,23 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
 //{
 //    // TODO: fix bug at this code
 //    file.open(fileName);
-//    file.seekp(std::ios::end);
+//    file.seekp(ios::end);
 //    file << '\n' << parameterName << " = " << parameter << '\n';
 //    file.close();
 //    return;
 //}
 
-auto CreateFile(std::string const & pathToFolder, std::string const & foldername, std::string const & filename) -> std::ofstream
+auto CreateFile(string const & pathToFolder, string const & foldername, string const & filename) -> ofstream
 {
-    std::string fname = pathToFolder + "/" + filename + ".txt";
-    std::ofstream file(fname.c_str());
+    string fname = pathToFolder + "/" + filename + ".txt";
+    ofstream file(fname.c_str());
     file << "Some information about the parameter settings:" << '\n';
     return file;
+}
+
+template<typename ArrayT>
+void WriteFStreamToArray(const ofstream & fstream, ArrayT & array)
+{
+    //sscanf
+    return;
 }
