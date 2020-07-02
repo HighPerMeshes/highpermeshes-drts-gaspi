@@ -18,7 +18,7 @@
  *                  u(0) = 1  on \Omega_1 and u(0) = 0  on \Omega_2,               *
  *                  w(0) = 0  on \Omega_1 and w(0) = 1  on \Omega_2.               *
  *                                                                                 *
- * last change: 04.06.2020                                                         *
+ * last change: 02.07.2020                                                         *
  * ------------------------------------------------------------------------------ **/
 
 #ifndef MONODOMAIN_CPP
@@ -64,30 +64,30 @@ auto CreateFile(string const & pathToFolder, string const & foldername, string c
 void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*,
                     ofstream & file*/);
 
-template<typename MeshT, typename BufferT, typename LoopBodyT>
+template<typename MeshT, typename BufferT, typename DispatcherT>
 void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight,
-                       const int & maxX, const int & maxY, LoopBodyT & body);
+                       const int & maxX, const int & maxY, DispatcherT & dispatcher);
 
-template<typename MeshT, typename LoopBodyT, typename BufferT>
-void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT & body, BufferT & lumpedMat) ;
+template<typename MeshT, typename DispatcherT, typename BufferT>
+void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat) ;
 
-template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
-void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT & body, BufferT & sBuffer);
+template<typename MeshT, typename VectorT, typename DispatcherT, typename BufferT>
+void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, DispatcherT & dispatcher, BufferT & sBuffer);
 
-//template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT>
-//void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, const bool & optionWrite);
+//template<typename BufferT, typename VectorT, typename DispatcherT, typename MeshT>
+//void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, DispatcherT & dispatcher, const MeshT & mesh, const bool & optionWrite);
 
-template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT, typename MutexT, typename OfstreamT>
-void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, 
+template<typename BufferT, typename VectorT, typename DispatcherT, typename MeshT, typename MutexT, typename OfstreamT>
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, DispatcherT & dispatcher, const MeshT & mesh,
              const bool & optionWrite, MutexT & mutex, OfstreamT & fstream);
 
-template<typename BufferT, typename BufferTGlobal, typename MeshT, typename LoopBodyT>
-void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, LoopBodyT & body,
+template<typename BufferT, typename BufferTGlobal, typename MeshT, typename DispatcherT>
+void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, DispatcherT & dispatcher,
                              const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
                              const float & a, const float & b, const float & eps);
 
 template<typename ArrayT>
-void WriteFStreamToArray(const ofstream & fstream, ArrayT & array);
+void WriteFStreamToArray(const ofstream & fstream, const string & filename, ArrayT & array);
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -95,7 +95,7 @@ int main(int argc, char** argv)
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
     drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
-    DistributedDispatcher body{hpm.gaspi_context, hpm.gaspi_segment, hpm};
+    DistributedDispatcher dispatcher{hpm.gaspi_context, hpm.gaspi_segment, hpm};
     ConfigParser CFG("config.cfg");
     string meshFile = CFG.GetValue<string>("MeshFile");
     const Mesh mesh      = Mesh::template CreateFromFile<AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
@@ -121,10 +121,10 @@ int main(int argc, char** argv)
     int maxY = ceil(sqrt(numNodes));
 
     Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u(mesh);
-    CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, body);
+    CreateStartVector(mesh, u, u0L, u0R, maxX, maxY, dispatcher);
 
     Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w(mesh);
-    CreateStartVector(mesh, w, w0L, w0R, maxX, maxY, body);
+    CreateStartVector(mesh, w, w0L, w0R, maxX, maxY, dispatcher);
 
     Buffer<float, Mesh, Dofs<1, 0, 0, 0>> u_deriv(mesh);
     Buffer<float, Mesh, Dofs<1, 0, 0, 0>> w_deriv(mesh);
@@ -132,7 +132,7 @@ int main(int argc, char** argv)
 
     /*------------------------------------------(4) Create monodomain problem ---------------------------------------------------------------------------------*/
     Buffer<float, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
-    AssembleLumpedMassMatrix(mesh, body, lumpedMat);
+    AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
 
     // check if startvector was set correctly by creating output file at time step zero
     stringstream s; s << 0;
@@ -149,9 +149,9 @@ int main(int argc, char** argv)
         string distFileName = "testDist" + s.str() + ".txt";
         ofstream fstream {distFileName};
 
-        computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, body, u, w, lumpedMat, sigma, a, b, eps);
-        FWEuler(u, u_deriv, h, body, mesh, true, mtx, fstream);
-        FWEuler(w, w_deriv, h, body, mesh, false, mtx, fstream);
+        computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, dispatcher, u, w, lumpedMat, sigma, a, b, eps);
+        FWEuler(u, u_deriv, h, dispatcher, mesh, true, mtx, fstream);
+        FWEuler(w, w_deriv, h, dispatcher, mesh, false, mtx, fstream);
 
         Vector array; array.resize(numNodes);
         WriteFStreamToArray(fstream, array);
@@ -232,12 +232,12 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
 //!
 //! \brief Create start vector.
 //!
-template<typename MeshT, typename BufferT, typename LoopBodyT>
-void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, LoopBodyT & body)
+template<typename MeshT, typename BufferT, typename DispatcherT>
+void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, DispatcherT & dispatcher)
 {
     auto nodes { mesh.template GetEntityRange<0>() };
 
-    body.Execute(ForEachEntity(
+    dispatcher.Execute(ForEachEntity(
                   nodes,
                   tuple(Read(Node(startVec))),
                   [&](auto const& node, const auto& iter, auto& lvs)
@@ -255,11 +255,11 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
 //!
 //! \brief Assemble rom-sum lumped mass matrix
 //!
-template<typename MeshT, typename LoopBodyT, typename BufferT>
-void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT & body, BufferT & lumpedMat)
+template<typename MeshT, typename DispatcherT, typename BufferT>
+void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat)
 {
     auto cells {mesh.template GetEntityRange<2>()};
-    body.Execute(ForEachEntity(
+    dispatcher.Execute(ForEachEntity(
                         cells,
                         tuple(ReadWrite(Node(lumpedMat))),
                         [&](auto const& cell, const auto& iter, auto& lvs)
@@ -286,11 +286,11 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT & body, BufferT & lu
 //!
 //! matrix-vector product split into single scalar operations
 //!
-template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
-void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT & body, BufferT & sBuffer)
+template<typename MeshT, typename VectorT, typename DispatcherT, typename BufferT>
+void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, DispatcherT & dispatcher, BufferT & sBuffer)
 {
     auto cells { mesh.template GetEntityRange<2>() };
-    body.Execute(ForEachEntity(
+    dispatcher.Execute(ForEachEntity(
                   cells,
                   tuple(ReadWrite(Node(sBuffer))),
                   [&](auto const& cell, const auto& iter, auto& lvs)
@@ -336,8 +336,8 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, LoopbodyT
 //!
 //! \brief Forward (explicit) Euler algorithm.
 //!
-template<typename BufferT, typename VectorT, typename LoopbodyT, typename MeshT, typename MutexT, typename OfstreamT>
-void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, LoopbodyT & body, const MeshT & mesh, 
+template<typename BufferT, typename VectorT, typename DispatcherT, typename MeshT, typename MutexT, typename OfstreamT>
+void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, DispatcherT & dispatcher, const MeshT & mesh,
 	     const bool & optionWrite, MutexT & mutex, OfstreamT & fstream)
 {
     //mutex mtx;
@@ -346,7 +346,7 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Loopbo
     auto vertices {mesh.template GetEntityRange<0>()};
 
     if (optionWrite) {
-        body.Execute(
+        dispatcher.Execute(
             ForEachEntity(
             vertices,
             tuple(ReadWrite(Node(vecOld))),
@@ -358,7 +358,7 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Loopbo
         );
     }
     else {
-        body.Execute(
+        dispatcher.Execute(
             ForEachEntity(
             vertices,
             tuple(ReadWrite(Node(vecOld))),
@@ -373,16 +373,16 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Loopbo
 //!
 //! \brief Compute ion current, derivation of u and derivation of w at time step t.
 //!
-template<typename BufferT, typename BufferTGlobal, typename MeshT, typename LoopBodyT>
-void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, LoopBodyT & body,
+template<typename BufferT, typename BufferTGlobal, typename MeshT, typename DispatcherT>
+void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, DispatcherT & dispatcher,
                              const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
                              const float & a, const float & b, const float & eps)
 {
     Buffer<float, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
-    AssembleMatrixVecProduct2D(mesh, u, body, s);
+    AssembleMatrixVecProduct2D(mesh, u, dispatcher, s);
 
     auto vertices {mesh.template GetEntityRange<0>()};
-    body.Execute(ForEachEntity(vertices, tuple(
+    dispatcher.Execute(ForEachEntity(vertices, tuple(
                                     ReadWrite(Node(f)),/*Read*/Write(Node(u_deriv)),/*Read*/Write(Node(w_deriv))),
                                     [&](auto const& vertex, const auto& iter, auto& lvs)
     {
@@ -415,8 +415,24 @@ auto CreateFile(string const & pathToFolder, string const & foldername, string c
 }
 
 template<typename ArrayT>
-void WriteFStreamToArray(const ofstream & fstream, ArrayT & array)
+void WriteFStreamToArray(const ofstream & fstream, const string & filename, ArrayT & array)
 {
-    //sscanf
+    fstream.open(filename);
+    char p = string[0];
+    int index;
+
+    if (p == 'index:')   // reading spheres
+    {
+        sscanf(string, "%i", &index);
+
+        //lineset_spheres->addPoints(new McVec3f(x1*UNITYSCALE, y1*UNITYSCALE, z1*UNITYSCALE),1);
+
+        //lineset_spheres->data[0].append(r*UNITYSCALE);
+
+        //spheres = true;
+        k++;
+    }
+
+
     return;
 }
