@@ -86,8 +86,8 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
                              const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
                              const float & a, const float & b, const float & eps);
 
-template<typename ArrayT>
-void WriteFStreamToArray(const ofstream & fstream, const string & filename, ArrayT & array);
+template<typename ArrayT, typename CharT>
+void WriteFStreamToArray(const ofstream & fstream, const CharT * filename, ArrayT & array);
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -140,28 +140,47 @@ int main(int argc, char** argv)
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
 
     mutex mtx;
-    //ofstream fstream { "testDist.txt" };
+    //ofstream fstream {"testDist.txt"};
 
     // compute
     for (int j = 0; j < numIt; ++j)
     {
         stringstream s; s << j+1;
-        string distFileName = "testDist" + s.str() + ".txt";
-        ofstream fstream {distFileName};
+        const char * cval = {"dispOut.txt"};
+
+        //string distFileName = "testDist" + s.str() + ".txt";
+        string distFileName = "dispOut.txt";
+        ofstream fstream {distFileName.c_str ()};
+        //ofstream fstream {"testDist.txt"};
+        //cout << distFileName << endl;
 
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, dispatcher, u, w, lumpedMat, sigma, a, b, eps);
         FWEuler(u, u_deriv, h, dispatcher, mesh, true, mtx, fstream);
         FWEuler(w, w_deriv, h, dispatcher, mesh, false, mtx, fstream);
+//        char * c = "testDistX";
+//        int vl = j+1;
+//        c[8] = vl + '0';
+//        //puts(c);
+//        char buf[100];
+//        strcpy(buf, c);
+//        strcat(buf, ".txt");
+
+//        cout << "buf:  " << buf << endl;
+
+
+        //const char *chr = distFileName.c_str();
+
 
         Vector array; array.resize(numNodes);
-        WriteFStreamToArray(fstream, array);
+        WriteFStreamToArray(fstream, cval, array);
+
 
         //if ((j+1)%10 == 0)
         //{
 
             //stringstream s; s << j+1;
-            name = filename + s.str();
-            writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+            //name = filename + s.str();
+            //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
         //}
     }
 
@@ -352,7 +371,7 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Dispat
             tuple(ReadWrite(Node(vecOld))),
             [&](auto const& vertex, const auto& iter, auto& lvs) {
                 vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
-        cout<<"u :    "<< vecOld[vertex.GetTopology().GetIndex()] <<endl;
+        //cout<<"u :    "<< vecOld[vertex.GetTopology().GetIndex()] <<endl;
             }),
             WriteLoop(mutex, fstream, vertices, vecOld)
         );
@@ -414,24 +433,52 @@ auto CreateFile(string const & pathToFolder, string const & foldername, string c
     return file;
 }
 
-template<typename ArrayT>
-void WriteFStreamToArray(const ofstream & fstream, const string & filename, ArrayT & array)
+template<typename ArrayT, typename CharT>
+void WriteFStreamToArray(const ofstream & fstream, const CharT * filename, ArrayT & array)
 {
-    fstream.open(filename);
-    char p = string[0];
+    //auto f = fstream.open(filename, ios::in);
+    //ifstream myfile(filename);
+    cout << filename << endl;
+    FILE* f = fopen(filename,"r"); // ("testDist.txt","r");/*filename.c_str()*/
+    if (!f)
+        cout<<"Error: can't open file."<<endl;
+    char p; p = 0;// p = string[0];
     int index;
 
-    if (p == 'index:')   // reading spheres
+    const int size = 1000;
+    char string[size];
+
+    while (feof(f) == 0) //while (fgets(string, size, f) != 0)
     {
-        sscanf(string, "%i", &index);
+        fgets(string, size, f);
+        cout << string << endl;
 
-        //lineset_spheres->addPoints(new McVec3f(x1*UNITYSCALE, y1*UNITYSCALE, z1*UNITYSCALE),1);
 
-        //lineset_spheres->data[0].append(r*UNITYSCALE);
-
-        //spheres = true;
-        k++;
     }
+    fclose(f);
+
+    //string line;
+    //if (myfile.is_open ())
+    //{
+//        while (fgets(str, size, f) != 0)
+ //           cout << "hello1" << endl;
+//        while ( getline(myfile,line) )
+//        {
+//            cout << "hello2" << endl;
+//            cout << line << '\n';
+//            cout << "hello2" << endl;
+//        }
+
+
+      //  myfile.close();
+    //}
+    //else
+      //  cout<<"error"<<endl;
+    //    if (p == 'index:')   // reading spheres
+    //    {
+    //        sscanf(string, "%i", &index);
+
+    //    }
 
 
     return;
