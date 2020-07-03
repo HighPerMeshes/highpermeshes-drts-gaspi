@@ -62,7 +62,7 @@ auto CreateFile(string const & pathToFolder, string const & foldername, string c
 //void WriteParameterInfoIntoFile(FileT& file, const NameT& fileName, const T& parameter, const NameT2& parameterName);
 
 void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*,
-                    ofstream & file*/);
+                                        ofstream & file*/);
 
 template<typename MeshT, typename BufferT, typename DispatcherT>
 void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight,
@@ -87,7 +87,7 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
                              const float & a, const float & b, const float & eps);
 
 template<typename ArrayT, typename CharT>
-void WriteFStreamToArray(const ofstream & fstream, const CharT * filename, ArrayT & array);
+void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx);
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -99,7 +99,7 @@ int main(int argc, char** argv)
     ConfigParser CFG("config.cfg");
     string meshFile = CFG.GetValue<string>("MeshFile");
     const Mesh mesh      = Mesh::template CreateFromFile<AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
-                           (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
+            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
     /*------------------------------------------(2) Set directory-,folder- and filename of result -------------------------------------------------------------*/
     char buff[FILENAME_MAX]; //create string buffer to hold path
@@ -140,17 +140,15 @@ int main(int argc, char** argv)
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
 
     mutex mtx;
-    //ofstream fstream {"testDist.txt"};
+    ofstream fstream {"testDist.txt", ofstream::out | ofstream::trunc};
 
     // compute
     for (int j = 0; j < numIt; ++j)
     {
-        stringstream s; s << j+1;
-        const char * cval = {"dispOut.txt"};
+        //string distFileName = "testDist"+".txt";
+        //ofstream fstream {distFileName};;
 
-        string distFileName = "dispOut.txt";
-        ofstream fstream {distFileName};;
-        cout << distFileName << endl;
+        cout << "-----------------------------Iterationstep:   " << j << "---------------------------------------" << endl;
 
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, dispatcher, u, w, lumpedMat, sigma, a, b, eps);
         FWEuler(u, u_deriv, h, dispatcher, mesh, true, mtx, fstream);
@@ -158,16 +156,18 @@ int main(int argc, char** argv)
 
 
         Vector array; array.resize(numNodes);
-        WriteFStreamToArray(fstream, cval, array);
-
+        const char * cval = {"testDist.txt"};
+        WriteFStreamToArray("testDist.txt", array, mtx);
+        fstream.close();
 
         //if ((j+1)%10 == 0)
         //{
 
-            //stringstream s; s << j+1;
-            //name = filename + s.str();
-            //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+        //stringstream s; s << j+1;
+        //name = filename + s.str();
+        //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
         //}
+
     }
 
     return 0;
@@ -224,12 +224,12 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
         printf("There is no option choosen for start value settings. Create your own option or choose one of the existing.");
 
     // add parameter to .txt file -> TODO: fix bug
-//    string fileName = "testParameterfile.txt";
-//    WriteParameterInfoIntoFile(file, fileName, h, "h");
-//    WriteParameterInfoIntoFile(file, fileName, a, "a");
-//    WriteParameterInfoIntoFile(file, fileName, b, "b");
-//    WriteParameterInfoIntoFile(file, fileName, eps, "eps");
-//    WriteParameterInfoIntoFile(file, fileName, sigma, "sigma");
+    //    string fileName = "testParameterfile.txt";
+    //    WriteParameterInfoIntoFile(file, fileName, h, "h");
+    //    WriteParameterInfoIntoFile(file, fileName, a, "a");
+    //    WriteParameterInfoIntoFile(file, fileName, b, "b");
+    //    WriteParameterInfoIntoFile(file, fileName, eps, "eps");
+    //    WriteParameterInfoIntoFile(file, fileName, sigma, "sigma");
 
     return;
 }
@@ -243,9 +243,9 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
     auto nodes { mesh.template GetEntityRange<0>() };
 
     dispatcher.Execute(ForEachEntity(
-                  nodes,
-                  tuple(Read(Node(startVec))),
-                  [&](auto const& node, const auto& iter, auto& lvs)
+                           nodes,
+                           tuple(Read(Node(startVec))),
+                           [&](auto const& node, const auto& iter, auto& lvs)
     {
         auto coords = node.GetTopology().GetVertices();
         if ( (coords[0][0] < maxX) && (coords[0][1] < maxY) )
@@ -265,9 +265,9 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, Buff
 {
     auto cells {mesh.template GetEntityRange<2>()};
     dispatcher.Execute(ForEachEntity(
-                        cells,
-                        tuple(ReadWrite(Node(lumpedMat))),
-                        [&](auto const& cell, const auto& iter, auto& lvs)
+                           cells,
+                           tuple(ReadWrite(Node(lumpedMat))),
+                           [&](auto const& cell, const auto& iter, auto& lvs)
     {
         auto& lumpedMat = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
         auto tmp        = cell.GetGeometry().GetJacobian();
@@ -296,9 +296,9 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, Dispatche
 {
     auto cells { mesh.template GetEntityRange<2>() };
     dispatcher.Execute(ForEachEntity(
-                  cells,
-                  tuple(ReadWrite(Node(sBuffer))),
-                  [&](auto const& cell, const auto& iter, auto& lvs)
+                           cells,
+                           tuple(ReadWrite(Node(sBuffer))),
+                           [&](auto const& cell, const auto& iter, auto& lvs)
     {
         constexpr int nrows = dim+1;
         constexpr int ncols = dim+1;
@@ -343,7 +343,7 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, Dispatche
 //!
 template<typename BufferT, typename VectorT, typename DispatcherT, typename MeshT, typename MutexT, typename OfstreamT>
 void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, DispatcherT & dispatcher, const MeshT & mesh,
-	     const bool & optionWrite, MutexT & mutex, OfstreamT & fstream)
+             const bool & optionWrite, MutexT & mutex, OfstreamT & fstream)
 {
     //mutex mtx;
     //ofstream fstream { "test.txt" };
@@ -352,24 +352,24 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Dispat
 
     if (optionWrite) {
         dispatcher.Execute(
-            ForEachEntity(
-            vertices,
-            tuple(ReadWrite(Node(vecOld))),
-            [&](auto const& vertex, const auto& iter, auto& lvs) {
-                vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
-        //cout<<"u :    "<< vecOld[vertex.GetTopology().GetIndex()] <<endl;
-            }),
-            WriteLoop(mutex, fstream, vertices, vecOld)
-        );
+                    ForEachEntity(
+                        vertices,
+                        tuple(ReadWrite(Node(vecOld))),
+                        [&](auto const& vertex, const auto& iter, auto& lvs) {
+            vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
+            //cout<<"u :    "<< vecOld[vertex.GetTopology().GetIndex()] <<endl;
+        }),
+                    WriteLoop(mutex, fstream, vertices, vecOld)
+                    );
     }
     else {
         dispatcher.Execute(
-            ForEachEntity(
-            vertices,
-            tuple(ReadWrite(Node(vecOld))),
-            [&](auto const& vertex, const auto& iter, auto& lvs) {
-                vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
-            }));
+                    ForEachEntity(
+                        vertices,
+                        tuple(ReadWrite(Node(vecOld))),
+                        [&](auto const& vertex, const auto& iter, auto& lvs) {
+            vecOld[vertex.GetTopology().GetIndex()] += h*vecDeriv[vertex.GetTopology().GetIndex()];
+        }));
     }
 
     return;
@@ -388,8 +388,8 @@ void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, 
 
     auto vertices {mesh.template GetEntityRange<0>()};
     dispatcher.Execute(ForEachEntity(vertices, tuple(
-                                    ReadWrite(Node(f)),/*Read*/Write(Node(u_deriv)),/*Read*/Write(Node(w_deriv))),
-                                    [&](auto const& vertex, const auto& iter, auto& lvs)
+                                         ReadWrite(Node(f)),/*Read*/Write(Node(u_deriv)),/*Read*/Write(Node(w_deriv))),
+                                     [&](auto const& vertex, const auto& iter, auto& lvs)
     {
         int id      = vertex.GetTopology().GetIndex();
         f[id]       = (u[id] * (1-u[id]) * (u[id]-a)) - w[id];
@@ -420,46 +420,141 @@ auto CreateFile(string const & pathToFolder, string const & foldername, string c
 }
 
 template<typename ArrayT, typename CharT>
-void WriteFStreamToArray(const ofstream & fstream, const CharT * filename, ArrayT & array)
+void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx)
 {
     //auto f = fstream.open(filename, ios::in);
     //ifstream myfile(filename);
-    cout << filename << endl;
-    FILE* f = fopen(filename,"r"); // ("testDist.txt","r");/*filename.c_str()*/
-    if (!f)
-        cout<<"Error: can't open file."<<endl;
-    char p; p = 0;// p = string[0];
-    int index;
+    //cout << filename << endl;
+    std::lock_guard guard { mtx };
 
-    const int size = 1000;
-    char string[size];
-
-    while (feof(f) == 0) //while (fgets(string, size, f) != 0)
+    FILE* f = fopen("testDist.txt","r"); //filename ("testDist.txt","r");/*filename.c_str()*/
+    if (f!=NULL)
     {
-        fgets(string, size, f);
-        cout << string << endl;
+        char /***/ p; p = 0;// p = string[0];
+        int index; const int size = 1000; /*sizeof(f)*/ char str[size];
+        int n_rows, d, k, z;
+        n_rows = 1;
+        d = k = z = 0;
 
+        int part1;
 
+        while (feof(f) == 0) //while (fgets(string, size, f) != 0) //
+        {
+            fgets(str, size, f);
+            //cout << str << endl;
+
+            //            if (string[0] == '#') {
+            //                continue;
+            //            }
+
+            //bool lineIsEmpty = false; //true
+            int i = 0;
+
+            //            while (string[i] != '\n'  &&  i < size)
+            //            {
+            //                if(i+1 == size)
+            //                {
+            //                    printf("Can't find any end of lines");
+            //                    fclose(f);
+            //                    return;
+            //                }
+            //                if(string[i] != '\t' && string[i] != ' ')
+            //                {
+            //                    lineIsEmpty = false;
+            //                }
+            //                if(string[i] == ',') string[i] = '.';
+            //                i++;
+            //            }
+
+            //if(!lineIsEmpty)
+            // {
+            //cout << "hello1" << endl;
+//            while (str[i] != 'x'  &&  i < 10)
+//                ++i;
+//            p = str[i];
+            //cout << "p = " << p << "     i = " << i << endl;
+
+            //p = str[8];
+            //cout << "p0 = " << p << endl;
+
+            if (str[5] == 'x')   // reading
+            {
+                int num = 0;
+                while (str[8+num] != ' ' && str[8+num] != '\t')
+                {
+                    strcat(&p, &str[8+num]);
+                    //p = /*p +*/ str[8];//str[8+num];
+                    ++num;
+                }
+                //p = str[8];
+                cout << "p:   " << p << endl;
+                //sscanf(str, "%c %i", &p, &index);
+                //cout << "index:   " << index << endl;
+                //                    k++;
+            }
+            //}
+
+            //            string candidate;
+            //            while( f >> candidate ) // for each candidate word read from the file
+            //            {
+            //                if( "index:" == candidate ) cout << "hello2" << endl; ;
+            //            }
+            n_rows++;
+
+        }
     }
+    else
+        cout<<"Error: can't open file."<<endl;
+
     fclose(f);
+
+
+    //    ifstream a;  // Datei-Handle
+    //    a.open(filename, ios::in); // Öffne Datei aus Parameter
+    //    string w;
+    //    //const int size = sizeof(a);/*100*/; char string[size];
+    //    //int i=0;
+    //    while (!a.eof()){          // Solange noch Daten vorliegen
+    //        getline(a, w);
+    //        //stringstream sstr(w);
+    //        //sstr >> Filme[i];
+    //        cout << "sstr getLine:  " << w <<endl;
+    //        //fgets(string, size, a);
+    //        //++i;
+    //    }
+    //    a.close();
+
+    //    ifstream file(filename);
+    //    if (file.is_open()) {
+    //        string line;
+    //        while (std::getline(file, line)) {
+    //            // using printf() in all tests for consistency
+    //            printf("%s", line.c_str());
+    //            cout << "    " << endl;
+    //        }
+    //        file.close();
+    //    }
+
+
+
 
     //string line;
     //if (myfile.is_open ())
     //{
-//        while (fgets(str, size, f) != 0)
- //           cout << "hello1" << endl;
-//        while ( getline(myfile,line) )
-//        {
-//            cout << "hello2" << endl;
-//            cout << line << '\n';
-//            cout << "hello2" << endl;
-//        }
+    //        while (fgets(str, size, f) != 0)
+    //           cout << "hello1" << endl;
+    //        while ( getline(myfile,line) )
+    //        {
+    //            cout << "hello2" << endl;
+    //            cout << line << '\n';
+    //            cout << "hello2" << endl;
+    //        }
 
 
-      //  myfile.close();
+    //  myfile.close();
     //}
     //else
-      //  cout<<"error"<<endl;
+    //  cout<<"error"<<endl;
     //    if (p == 'index:')   // reading spheres
     //    {
     //        sscanf(string, "%i", &index);
