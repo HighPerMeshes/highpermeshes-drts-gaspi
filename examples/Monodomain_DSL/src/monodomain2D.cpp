@@ -148,27 +148,13 @@ int main(int argc, char** argv)
         stringstream s; s << j+1;
         const char * cval = {"dispOut.txt"};
 
-        //string distFileName = "testDist" + s.str() + ".txt";
         string distFileName = "dispOut.txt";
-        ofstream fstream {distFileName.c_str ()};
-        //ofstream fstream {"testDist.txt"};
-        //cout << distFileName << endl;
+        ofstream fstream {distFileName};;
+        cout << distFileName << endl;
 
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, dispatcher, u, w, lumpedMat, sigma, a, b, eps);
         FWEuler(u, u_deriv, h, dispatcher, mesh, true, mtx, fstream);
         FWEuler(w, w_deriv, h, dispatcher, mesh, false, mtx, fstream);
-//        char * c = "testDistX";
-//        int vl = j+1;
-//        c[8] = vl + '0';
-//        //puts(c);
-//        char buf[100];
-//        strcpy(buf, c);
-//        strcat(buf, ".txt");
-
-//        cout << "buf:  " << buf << endl;
-
-
-        //const char *chr = distFileName.c_str();
 
 
         Vector array; array.resize(numNodes);
