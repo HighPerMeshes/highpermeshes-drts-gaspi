@@ -422,145 +422,37 @@ auto CreateFile(string const & pathToFolder, string const & foldername, string c
 template<typename ArrayT, typename CharT>
 void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx)
 {
-    //auto f = fstream.open(filename, ios::in);
-    //ifstream myfile(filename);
-    //cout << filename << endl;
     std::lock_guard guard { mtx };
+    FILE* f = fopen("testDist.txt","r");
 
-    FILE* f = fopen("testDist.txt","r"); //filename ("testDist.txt","r");/*filename.c_str()*/
     if (f!=NULL)
     {
-        char /***/ p; p = 0;// p = string[0];
-        int index; const int size = 1000; /*sizeof(f)*/ char str[size];
-        int n_rows, d, k, z;
-        n_rows = 1;
-        d = k = z = 0;
+        const int size = 100; char str[size];
+        int ID, val;
 
-        int part1;
-
-        while (feof(f) == 0) //while (fgets(string, size, f) != 0) //
+        while (feof(f) == 0)
         {
             fgets(str, size, f);
-            //cout << str << endl;
-
-            //            if (string[0] == '#') {
-            //                continue;
-            //            }
-
-            //bool lineIsEmpty = false; //true
-            int i = 0;
-
-            //            while (string[i] != '\n'  &&  i < size)
-            //            {
-            //                if(i+1 == size)
-            //                {
-            //                    printf("Can't find any end of lines");
-            //                    fclose(f);
-            //                    return;
-            //                }
-            //                if(string[i] != '\t' && string[i] != ' ')
-            //                {
-            //                    lineIsEmpty = false;
-            //                }
-            //                if(string[i] == ',') string[i] = '.';
-            //                i++;
-            //            }
-
-            //if(!lineIsEmpty)
-            // {
-            //cout << "hello1" << endl;
-//            while (str[i] != 'x'  &&  i < 10)
-//                ++i;
-//            p = str[i];
-            //cout << "p = " << p << "     i = " << i << endl;
-
-            //p = str[8];
-            //cout << "p0 = " << p << endl;
-
             if (str[5] == 'x')   // reading
             {
-                int num = 0;
-                while (str[8+num] != ' ' && str[8+num] != '\t')
+                string s;
+                s.append(1,str[8]);
+
+                int num = 1;
+                while (str[8+num] !='\n')
                 {
-                    strcat(&p, &str[8+num]);
-                    //p = /*p +*/ str[8];//str[8+num];
+                    s.append(1,str[8+num]);
                     ++num;
                 }
-                //p = str[8];
-                cout << "p:   " << p << endl;
-                //sscanf(str, "%c %i", &p, &index);
-                //cout << "index:   " << index << endl;
-                //                    k++;
+
+                ID = stoi(s);
+                cout << "i:  " << ID << endl;
             }
-            //}
-
-            //            string candidate;
-            //            while( f >> candidate ) // for each candidate word read from the file
-            //            {
-            //                if( "index:" == candidate ) cout << "hello2" << endl; ;
-            //            }
-            n_rows++;
-
         }
     }
     else
         cout<<"Error: can't open file."<<endl;
 
     fclose(f);
-
-
-    //    ifstream a;  // Datei-Handle
-    //    a.open(filename, ios::in); // Öffne Datei aus Parameter
-    //    string w;
-    //    //const int size = sizeof(a);/*100*/; char string[size];
-    //    //int i=0;
-    //    while (!a.eof()){          // Solange noch Daten vorliegen
-    //        getline(a, w);
-    //        //stringstream sstr(w);
-    //        //sstr >> Filme[i];
-    //        cout << "sstr getLine:  " << w <<endl;
-    //        //fgets(string, size, a);
-    //        //++i;
-    //    }
-    //    a.close();
-
-    //    ifstream file(filename);
-    //    if (file.is_open()) {
-    //        string line;
-    //        while (std::getline(file, line)) {
-    //            // using printf() in all tests for consistency
-    //            printf("%s", line.c_str());
-    //            cout << "    " << endl;
-    //        }
-    //        file.close();
-    //    }
-
-
-
-
-    //string line;
-    //if (myfile.is_open ())
-    //{
-    //        while (fgets(str, size, f) != 0)
-    //           cout << "hello1" << endl;
-    //        while ( getline(myfile,line) )
-    //        {
-    //            cout << "hello2" << endl;
-    //            cout << line << '\n';
-    //            cout << "hello2" << endl;
-    //        }
-
-
-    //  myfile.close();
-    //}
-    //else
-    //  cout<<"error"<<endl;
-    //    if (p == 'index:')   // reading spheres
-    //    {
-    //        sscanf(string, "%i", &index);
-
-    //    }
-
-
     return;
 }
