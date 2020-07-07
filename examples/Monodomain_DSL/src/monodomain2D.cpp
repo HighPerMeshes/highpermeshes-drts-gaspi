@@ -140,25 +140,29 @@ int main(int argc, char** argv)
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
 
     mutex mtx;
-    ofstream fstream {"testDist.txt", ofstream::out | ofstream::trunc};
-
+    ofstream fstream {"testDist.txt"/*, ofstream::out | ofstream::trunc*/};
+    Vector array; array.resize(numNodes);
     // compute
     for (int j = 0; j < numIt; ++j)
     {
-        //string distFileName = "testDist"+".txt";
-        //ofstream fstream {distFileName};;
+        stringstream s; s << j+1;
+        string distFileName = "testDist" + s.str() + ".txt";
+        ofstream fstream2 {distFileName};;
 
         cout << "-----------------------------Iterationstep:   " << j << "---------------------------------------" << endl;
 
         computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, dispatcher, u, w, lumpedMat, sigma, a, b, eps);
-        FWEuler(u, u_deriv, h, dispatcher, mesh, true, mtx, fstream);
-        FWEuler(w, w_deriv, h, dispatcher, mesh, false, mtx, fstream);
+        FWEuler(u, u_deriv, h, dispatcher, mesh, true, mtx, fstream2);
+        FWEuler(w, w_deriv, h, dispatcher, mesh, false, mtx, fstream2);
 
+        WriteFStreamToArray(/*"testDist.txt"*/distFileName.c_str(), array, mtx);
+        //fstream.close();
 
-        Vector array; array.resize(numNodes);
-        const char * cval = {"testDist.txt"};
-        WriteFStreamToArray("testDist.txt", array, mtx);
-        fstream.close();
+        for (int ka = 0; ka < array.size(); ++ka)
+            cout << "Array[" << ka << "]:  " << array[ka] << endl;
+
+        for (int ka = 0; ka < numNodes; ++ka)
+            cout << "u[" << ka << "]:  " << u[ka] << endl;
 
         //if ((j+1)%10 == 0)
         //{
@@ -423,17 +427,20 @@ template<typename ArrayT, typename CharT>
 void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx)
 {
     std::lock_guard guard { mtx };
-    FILE* f = fopen("testDist.txt","r");
+    //FILE* f = fopen("testDist.txt","r");
+    FILE* f = fopen(filename,"r");
 
     if (f!=NULL)
     {
         const int size = 100; char str[size];
-        int ID, val;
+        int ID; float val;
+        bool findID, findVal; findID = findVal = false;
 
+        // reading file line by line and searching for 'keyletters' of keywords
         while (feof(f) == 0)
         {
             fgets(str, size, f);
-            if (str[5] == 'x')   // reading
+            if (str[5] == 'x') // searching for 'x' of keyword 'index' at file f
             {
                 string s;
                 s.append(1,str[8]);
@@ -447,6 +454,32 @@ void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx)
 
                 ID = stoi(s);
                 cout << "i:  " << ID << endl;
+
+                findID = true;
+            }
+
+            if (str[1] == 'V') // searching for 'v' of keyword 'value' at file f
+            {
+                string s2;
+                s2.append(1,str[8]);
+
+                int num = 1;
+                while (str[8+num] !='\n')
+                {
+                    s2.append(1,str[8+num]);
+                    ++num;
+                }
+
+                val = stof(s2);
+                cout << "val:  " << val << endl;
+
+                findVal = true;
+            }
+
+            if (findID == true && findVal == true)
+            {
+                array[ID] = val;
+                findID = findVal = false;
             }
         }
     }
