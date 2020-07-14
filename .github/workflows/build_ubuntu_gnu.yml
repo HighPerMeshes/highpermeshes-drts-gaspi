@@ -88,8 +88,8 @@ jobs:
     - name: test highpermeshes-drts-gaspi
       working-directory: ./build/tests
       run: >-
-        chmod +x create-files.sh
-        ./create-files.sh
-        gaspi_run -m machine -n 1 tests
-        gaspi_run -m machine -n 2 tests
+        chmod +x create-files.sh &&
+        ./create-files.sh &&
+        gaspi_run -m machine -n 1 tests &&
+        gaspi_run -m machine -n 2 tests &&
         gaspi_run -m machine -n 3 tests
