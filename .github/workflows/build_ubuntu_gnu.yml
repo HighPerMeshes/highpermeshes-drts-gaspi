@@ -84,3 +84,12 @@ jobs:
         ace_dep="-DACE_INCLUDE_DIR=ACE/include -DACE_LIBRARY=ACE/lib/libACE.a" &&
         gaspi_dep="-DGaspiCxx_INCLUDE_DIR=GaspiCxx/include -DGaspiCxx_LIBRARY=GaspiCxx/lib/libGaspiCxx.a" &&
         cmake $ace_dep $gaspi_dep .. && make
+
+    - name: test highpermeshes-drts-gaspi
+      working-directory: ./build/tests
+      run: >-
+        chmod +x create-files.sh
+        ./create-files.sh
+        gaspi_run -m machine -n 1 tests
+        gaspi_run -m machine -n 2 tests
+        gaspi_run -m machine -n 3 tests
