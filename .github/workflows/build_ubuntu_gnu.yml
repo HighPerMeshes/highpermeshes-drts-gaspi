@@ -88,6 +88,7 @@ jobs:
     - name: test highpermeshes-drts-gaspi
       working-directory: ./build/tests
       run: >-
+        export PATH=$PATH:`pwd`/GPI-2-ethernet/bin &&
         chmod +x create-files.sh &&
         ./create-files.sh &&
         gaspi_run -m machine -n 1 tests &&
