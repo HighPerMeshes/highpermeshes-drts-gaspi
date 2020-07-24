@@ -112,8 +112,8 @@ int main(int argc, char** argv)
     GetCurrentDir(buff, FILENAME_MAX);
     string currentWorkingDir(buff);
 
-    string foldername = "TestDistCaseNuma2";
-    string filename   = "TestDistCaseNuma2_";
+    string foldername = "Test20x20MeshDistCaseNuma2";
+    string filename   = "Test20x20MeshDistCaseNuma2_";
     //string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/

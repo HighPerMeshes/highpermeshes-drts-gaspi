@@ -10,10 +10,9 @@ target_link_libraries (monodomain_dsl2D LINK_PRIVATE HighPerMeshesDRTS::HighPerM
 configure_file(./src/config.cfg config.cfg COPYONLY)
 
 # config file setting: meshfile
+#configure_file(./meshfiles/mesh2D_test5x5.am COPYONLY)
+configure_file(./meshfiles/mesh2D_20x20.am COPYONLY)
 #configure_file(./meshfiles/mesh2D.am COPYONLY)
-configure_file(./meshfiles/mesh2D_test5x5.am COPYONLY)
-
-
 
 
 
