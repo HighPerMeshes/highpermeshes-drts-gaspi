@@ -1,0 +1,71 @@
+# AmiraMesh 3D ASCII 2.0
+
+
+nNodes 8
+nTetrahedra 5
+nEdges 0
+nBoundaryTriangles 2
+
+Parameters {
+    Materials {
+        Bone {
+            id 1        
+    	}
+        Cartilage {
+            Id 2
+        }
+    }
+    BoundaryIds {
+        Id0 {
+            Id 0,
+            Info "undefined",
+            Color 0.6 0.6 0.6
+        }
+        name "BoundaryConditions"
+    }
+}
+
+Nodes { float[3] Coordinates } @1
+EdgeData { int[2] fromTo } @2
+Tetrahedra { int[4] Nodes } @3
+TetrahedronData { int Materials } @4
+BoundaryTriangleData { int Id } @5
+BoundaryTriangles { int[3] Nodes } @6
+
+# Data section follows
+@1
+0.0000000000e+00 0.0000000000e+00 0.0000000000e+000
+0.0000000000e+00 0.0000000000e+00 1.0000000000e+000
+1.0000000000e+00 0.0000000000e+00 0.0000000000e+000
+0.0000000000e+00 1.0000000000e+00 0.0000000000e+000
+1.0000000000e+00 0.0000000000e+00 1.0000000000e+000
+0.0000000000e+00 1.0000000000e+00 1.0000000000e+000
+1.0000000000e+00 1.0000000000e+00 0.0000000000e+000
+1.0000000000e+00 1.0000000000e+00 1.0000000000e+000
+
+@3
+1 7 6 4
+1 3 5 7
+7 5 8 6
+1 5 2 6
+1 5 6 7
+
+@4
+1 
+1 
+1 
+1 
+2 
+
+@5
+2
+2
+1
+1
+
+@6
+1 4 7
+1 3 7
+5 6 8
+2 5 6
+
