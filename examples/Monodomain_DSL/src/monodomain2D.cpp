@@ -83,9 +83,9 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, Dispatche
 //template<typename BufferT, typename VectorT, typename DispatcherT, typename MeshT>
 //void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, DispatcherT & dispatcher, const MeshT & mesh, const bool & optionWrite);
 
-template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT, typename OfstreamT>
+template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT/*, typename OfstreamT*/>
 void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, /*const*/ BufferT & vecDeriv, const float & h,
-             const bool & optionWrite, MutexT & mutex, OfstreamT & fstream);
+             const bool & optionWrite, MutexT & mutex, const stringstream & fstreamNumber);
 
 template<typename BufferT, typename MeshT, typename DispatcherT>
 void computeIionUDerivWDeriv(const MeshT & mesh, DispatcherT & dispatcher, BufferT & f, BufferT & u_deriv, BufferT & w_deriv,
@@ -98,6 +98,9 @@ void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx);
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
+
+    bool optionAllGather = false;
+    bool optionWriteOut  = true;
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
     drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
@@ -140,59 +143,89 @@ int main(int argc, char** argv)
     Buffer</*float*/double, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
 
+    const std::size_t proc_id = hpm.gaspi_context.rank().get();
+    cout << "Process id: " << proc_id << endl;
+
     // check if startvector was set correctly by creating output file at time step zero
+    const auto& u_gather0 = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+    std::vector<float> u_total0(numNodes);
+    const std::size_t num_buffers0 = u_gather0.size ()/ numNodes;
+    for (std::size_t i = 0; i < numNodes; ++i)
+    {
+        u_total0[i] = 0;
+        for (std::size_t k = 0; k < num_buffers0; ++k)
+            u_total0[i] += u_gather0[k * numNodes + i];
+    }
+
     stringstream s; s << 0;
     string name = filename + s.str();
-    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, /*u*/u_total0, "resultU");
 
     mutex mtx;
-    //ofstream fstream {"testDist.txt"/*, ofstream::out | ofstream::trunc*/};
-    Vector array; array.resize(numNodes);
 
     // compute u (and w)
     for (int j = 0; j < numIt; ++j)
     {
         stringstream s; s << j+1;
-        string distFileName = "testDist" + s.str() + ".txt";
-        ofstream fstream {distFileName};
+        //string distFileName = "testDist" + s.str() + ".txt";
+        //ofstream fstream {distFileName};
+        //ofstream fstream{};
 
         //cout << "-----------------------------Iterationstep(u):   " << j << "---------------------------------------" << endl;
 
-        computeIionUDerivWDeriv(mesh, dispatcher, f, u_deriv, w_deriv, u, w, lumpedMat, sigma, a, b, eps);
-        FWEuler(mesh, dispatcher, u, u_deriv, h, true, mtx, fstream);
-        FWEuler(mesh, dispatcher, w, w_deriv, h, false, mtx, fstream);
-        fstream.close();
-
-        // controll u
-//        for (int ka = 0; ka < numNodes; ++ka)
-//            cout << "u[" << ka << "]:  " << u[ka] << endl;
-
-        if ((j+1)%10 == 0)
-        {
-            //stringstream s; s << j+1;
-            name = filename + s.str();
-            writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+        if((j+1)%10 == 0) {
+            optionWriteOut = true;
+            //string distFileName = "testDist" + s.str() + ".txt";
+            //fstream {distFileName};
         }
+        else
+            optionWriteOut = false;
 
+        computeIionUDerivWDeriv(mesh, dispatcher, f, u_deriv, w_deriv, u, w, lumpedMat, sigma, a, b, eps);
+        FWEuler(mesh, dispatcher, u, u_deriv, h, optionWriteOut, mtx, s);
+        FWEuler(mesh, dispatcher, w, w_deriv, h, false, mtx, s);
+
+
+        if (optionAllGather) // create output files using AllGather
+        {
+            const auto& u_gather = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+            if (proc_id == 0) {
+                std::vector<float> u_total(numNodes);
+                const std::size_t num_buffers = u_gather.size ()/ numNodes;
+                for (std::size_t i = 0; i < numNodes; ++i)
+                {
+                    u_total[i] = 0;
+                    for (std::size_t k = 0; k < num_buffers; ++k)
+                        u_total[i] += u_gather[k * numNodes + i];
+                }
+
+                if ((j+1)%10 == 0)
+                {
+                    name = filename + s.str();
+                    //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
+                    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u_total, "resultU");
+                }
+            }
+        }
     }
 
-    // write output files with result u
-//    for (int k = 0; k < numIt; ++k)
-//    {
-//        stringstream s; s << k+1;
-//        string distFileName = "testDist" + s.str() + ".txt";
-//        WriteFStreamToArray(distFileName.c_str(), array, mtx);
+    if (!optionAllGather) // create output files using WriteLoop option
+    {
+        Vector array; array.resize(numNodes);
+        for (int k = 0; k < numIt; ++k)
+        {
+            if ((k+1)%10 == 0)
+            {
+                stringstream s; s << k+1;
+                string distFileName = "testDist" + s.str() + ".txt";
+                WriteFStreamToArray(distFileName.c_str(), array, mtx);
 
-//        /*cout << "-----------------------------Iterationstep(array):   " << k << "---------------------------------------" << endl;
-//        for (int ka = 0; ka < numNodes; ++ka)
-//            cout << "Array[" << ka << "]:  " << array[ka] << endl;*/
-
-////        if ((k+1)%10 == 0)
-////        {
-////            name = filename + s.str();
-////            writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, array, "resultU");
-////        }
-//    }
+                cout << "-----------------------------Iterationstep(array):   " << k << "---------------------------------------" << endl;
+                name = filename + s.str();
+                writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, array, "resultU");
+            }
+        }
+    }
 
     return 0;
 }
@@ -373,16 +406,19 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, Dispatche
 //!
 //! \brief Forward (explicit) Euler algorithm.
 //!
-template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT, typename OfstreamT>
+template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT/*, typename OfstreamT*/>
 void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, /*const*/ BufferT & vecDeriv, const float & h,
-             const bool & optionWrite, MutexT & mutex, OfstreamT & fstream)
+             const bool & optionWrite, MutexT & mutex, const stringstream & fstreamNumber)
 {
     //mutex mtx;
     //ofstream fstream { "test.txt" };
 
     auto vertices {mesh.template GetEntityRange<0>()};
 
-    if (optionWrite) {
+    if (optionWrite)
+    {
+        string distFileName = "testDist" + fstreamNumber.str() + ".txt";
+        ofstream fstream {distFileName};
         dispatcher.Execute(
                     ForEachEntity(
                         vertices,
@@ -401,6 +437,7 @@ void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, /*c
         }),
             WriteLoop(mutex, fstream, vertices, vecOld)
       );
+        fstream.close();
     }
     else {
         dispatcher.Execute(
