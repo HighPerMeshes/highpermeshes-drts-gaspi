@@ -98,9 +98,8 @@ void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx);
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
-
-    bool optionAllGather = false;
-    bool optionWriteOut  = true;
+    bool optionAllGather = true;
+    bool optionWriteOut  = false;
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
     drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
@@ -115,15 +114,15 @@ int main(int argc, char** argv)
     GetCurrentDir(buff, FILENAME_MAX);
     string currentWorkingDir(buff);
 
-    string foldername = "Test20x20MeshDistCaseNuma2";
-    string filename   = "Test20x20MeshDistCaseNuma2_";
+    string foldername = "testProcesses";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
+    string filename   = "testProcesses";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
     //string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt = 1000;//1000;
+    int numIt = 400;//1000;
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
     //auto file = CreateFile(currentWorkingDir, foldername, parameterFilename);
-    SetStartValues(1, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
+    SetStartValues(0, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = ceil(sqrt(numNodes)/4);
@@ -143,11 +142,11 @@ int main(int argc, char** argv)
     Buffer</*float*/double, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
 
-    const std::size_t proc_id = hpm.gaspi_context.rank().get();
-    cout << "Process id: " << proc_id << endl;
+    //const std::size_t proc_id = hpm.gaspi_context.rank().get();
+    //cout << "Process id: " << proc_id << endl;
 
     // check if startvector was set correctly by creating output file at time step zero
-    const auto& u_gather0 = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+    const auto& u_gather0 = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
     std::vector<float> u_total0(numNodes);
     const std::size_t num_buffers0 = u_gather0.size ()/ numNodes;
     for (std::size_t i = 0; i < numNodes; ++i)
@@ -188,8 +187,11 @@ int main(int argc, char** argv)
 
         if (optionAllGather) // create output files using AllGather
         {
-            const auto& u_gather = AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
-            if (proc_id == 0) {
+            const std::size_t proc_id = hpm.gaspi_context.rank().get();
+            cout << "Process id: " << proc_id << endl;
+
+            const auto& u_gather = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+            //if (proc_id == 0) {
                 std::vector<float> u_total(numNodes);
                 const std::size_t num_buffers = u_gather.size ()/ numNodes;
                 for (std::size_t i = 0; i < numNodes; ++i)
@@ -205,7 +207,7 @@ int main(int argc, char** argv)
                     //writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u, "resultU");
                     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u_total, "resultU");
                 }
-            }
+            //}
         }
     }
 
@@ -238,7 +240,20 @@ int main(int argc, char** argv)
 //!
 void SetStartValues(int option, float& h, float& a, float& b, float& eps, float& sigma, float& u0L, float& u0R, float& w0L, float& w0R/*, ofstream& file*/)
 {
-    if (option == 1)
+    if (option == 0)
+    {
+        // input options for small and bigger meshs
+        h     = 0.2; // step size
+        a     = 0.1;
+        b     = 1e-4;
+        eps   = 5e-4;
+        sigma = -0.1;
+        u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
+        u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
+        w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+        w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+    }
+    else if (option == 1)
     {
         // input options for small mesh 5x5 (config.cfg -> mesh2D_test5x5.am)
         h     = 0.015; // step size
