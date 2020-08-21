@@ -108,8 +108,8 @@ int main(int argc, char** argv)
     GetCurrentDir(buff, FILENAME_MAX);
     string currentWorkingDir(buff);
 
-    string foldername = "TestForDistributedOutput";
-    string filename   = "TestForDistributedOutput_";
+    string foldername = "Test3D";
+    string filename   = "Test3D";
     //string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
