@@ -1,0 +1,110 @@
+# AmiraMesh 3D ASCII 2.0
+
+
+nNodes 25
+nTetrahedra 32    #should be "nTriangles" but the reader does not work with this actually
+nEdges 0
+nBoundaryTriangles 2
+
+Parameters {
+    Materials {
+        Bone {
+            id 1        
+    	}
+        Cartilage {
+            Id 2
+        }
+    }
+    BoundaryIds {
+        Id0 {
+            Id 0,
+            Info "undefined",
+            Color 0.6 0.6 0.6
+        }
+	Id1 {
+            Id 1,
+            Info "NInhom",
+            Type "Neumann",
+            Color 1 0.2 0.569231
+        }
+        Id2 {
+            Id 2,
+            Info "DHom",
+            Type "Dirichlet",
+            Color 0.231 0.231 0.969
+        }      
+        name "BoundaryConditions"
+    }
+    UnitLength 0.00999999977648258
+}
+
+Nodes { float[2] Coordinates } @1
+EdgeData { int[2] fromTo } @2
+Tetrahedra { int[3] Nodes } @3
+TetrahedronData { int Materials } @4
+
+# Data section follows
+@1
+0.000000e+00 0.000000e+00
+1.000000e+00 0.000000e+00
+2.000000e+00 0.000000e+00
+3.000000e+00 0.000000e+00
+4.000000e+00 0.000000e+00
+0.000000e+00 1.000000e+00
+1.000000e+00 1.000000e+00
+2.000000e+00 1.000000e+00
+3.000000e+00 1.000000e+00
+4.000000e+00 1.000000e+00
+0.000000e+00 2.000000e+00
+1.000000e+00 2.000000e+00
+2.000000e+00 2.000000e+00
+3.000000e+00 2.000000e+00
+4.000000e+00 2.000000e+00
+0.000000e+00 3.000000e+00
+1.000000e+00 3.000000e+00
+2.000000e+00 3.000000e+00
+3.000000e+00 3.000000e+00
+4.000000e+00 3.000000e+00
+0.000000e+00 4.000000e+00
+1.000000e+00 4.000000e+00
+2.000000e+00 4.000000e+00
+3.000000e+00 4.000000e+00
+4.000000e+00 4.000000e+00
+
+@3
+1 2 6
+6 7 2
+2 3 7
+7 8 3
+3 4 8
+8 9 4
+4 5 9
+9 10 5
+6 7 11
+11 12 7
+7 8 12
+12 13 8
+8 9 13
+13 14 9
+9 10 14
+14 15 10
+11 12 16
+16 17 12
+12 13 17
+17 18 13
+13 14 18
+18 19 14
+14 15 19
+19 20 15
+16 17 21
+21 22 17
+17 18 22
+22 23 18
+18 19 23
+23 24 19
+19 20 24
+24 25 20
+
+@4
+
+

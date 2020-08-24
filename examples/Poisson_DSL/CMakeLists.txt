@@ -28,7 +28,7 @@ configure_file(./meshfiles/unitcube_amiraFile.am ./meshfiles/unitcube_amiraFile.
 
 #---------------------------------------------------------------------------------------------------------------#
 
-# Add executable called "poisson_3DMatFree" that is built from the source 
+# Add executable called "poisson_2DMatFree" that is built from the source 
 # file "poisson2DMatFree.cpp". The extensions are automatically found.
 add_executable ( poisson_2DMatFree ./src/poisson2DMatFree.cpp )
 
@@ -38,6 +38,8 @@ target_link_libraries (poisson_2DMatFree LINK_PRIVATE HighPerMeshesDRTS::HighPer
 # config file settings
 configure_file(./src/config2DMatFree.cfg config2DMatFree.cfg COPYONLY)
 
-# config file settings: meshfiles
-configure_file(./meshfiles/unstructured2DMeshfile.am ./meshfiles/unstructured2DMeshfile.am COPYONLY)
-
+# config file settings: meshfiles mesh2D_20x20
+#configure_file(./meshfiles/unstructured2DMeshfile.am ./meshfiles/unstructured2DMeshfile.am COPYONLY) #unstructured mesh 
+configure_file(./meshfiles/unstructured2DMeshfile22Nodes.am ./meshfiles/unstructured2DMeshfile22Nodes.am COPYONLY) #unstructured mesh
+#configure_file(./meshfiles/mesh2D_20x20.am ./meshfiles/mesh2D_20x20.am COPYONLY) #structured mesh
+#configure_file(./meshfiles/mesh2D_test5x5.am ./meshfiles/mesh2D_test5x5.am COPYONLY) #structured mesh
