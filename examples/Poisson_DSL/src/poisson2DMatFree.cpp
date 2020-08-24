@@ -35,6 +35,9 @@
 #include <../examples/Functions/solver.hpp>
 #include <../examples/Functions/mathFunctions.hpp>
 
+#include <unistd.h>
+#define GetCurrentDir getcwd
+
 class DEBUG;
 using namespace std;
 using namespace HPM;
@@ -44,10 +47,17 @@ using Dofs           = HPM::dataType::Dofs<I...>;
 using Vector         = std::vector<float>;
 using Matrix         = std::vector<Vector>;
 using CoordinateT    = HPM::dataType::Vec<float,2>;
-using Mesh           = HPM::mesh::PartitionedMesh<CoordinateT, HPM::entity::Simplex>; //for distributed case
+//using Mesh           = HPM::mesh::PartitionedMesh<CoordinateT, HPM::entity::Simplex>; //for distributed case
+using Mesh           = HPM::mesh::Mesh<CoordinateT, HPM::entity::Simplex>; // for sequential case
 constexpr int dim    = Mesh::CellDimension;
 
+int const numNodes = 22;
+using VecDSL       = HPM::dataType::Vec<float,numNodes>;
+
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
+template<typename MeshT, typename BufferT, typename DispatcherT>
+void CreateStartVector(const MeshT & mesh, BufferT & startVec, DispatcherT & dispatcher);
+
 template<typename MeshT, typename BufferT, typename ItLoopBodyObjT>
 void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bodyObj);
 
@@ -55,31 +65,49 @@ template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
 
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecDslT>
-auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT;
+auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDslT & x, /*const*/ int const & size,
+              const int & numSolverIt, const float & tol)->VecDslT;
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
-    drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
-    DistributedDispatcher dispatcher{hpm.gaspi_context, hpm.gaspi_segment, hpm};
-    ConfigParser CFG("config2DMatFree.cfg");
-    string meshFile = CFG.GetValue<string>("MeshFile");
-    const Mesh mesh      = Mesh::template CreateFromFile<AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
-                                          (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
+    /*------------------------------------------(1a) Sequential case: -----------------------------------------------------------------------------------------*/
+        HPM::drts::Runtime hpm { HPM::GetBuffer{} };
+        HPM::SequentialDispatcher dispatcher;
+        ConfigParser CFG("config2DMatFree.cfg");
+        string meshFile = CFG.GetValue<string>("MeshFile");
+        const Mesh mesh = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader>(meshFile);
+    /*------------------------------------------(1b) Distributed case: --------------------------------------------------------------------------------------*/
+//    drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
+//    DistributedDispatcher dispatcher{hpm.gaspi_context, hpm.gaspi_segment, hpm};
+//    ConfigParser CFG("config2DMatFree.cfg");
+//    string meshFile = CFG.GetValue<string>("MeshFile");
+//    const Mesh mesh      = Mesh::template CreateFromFile<AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
+//                                          (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
-
-//    int const numNodes = 11;//mesh.template GetNumEntities<0>;
+    //int const numNodes = 25;//11;//mesh.template GetNumEntities<0>;
 
     /*------------------------------------------(2) Set right hand side: --------------------------------------------------------------------------------------*/
-    //HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> rhs(mesh);
-    //SetRHS(mesh, rhs, true, dispatcher);
+    HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> rhs(mesh);
+    SetRHS(mesh, rhs, true, dispatcher);
 
     /*------------------------------------------(3) Solve: CGSolver -------------------------------------------------------------------------------------------*/
-    //HPM::dataType::Vec<float, numNodes> x2;
-    //for (int i = 0; i < numNodes; ++i) {x2[i]=0;} // set start vector
+    HPM::dataType::Vec<float, numNodes> x2;
+    for (int i = 0; i < numNodes; ++i) {x2[i]=0;} // set start vector
 
-    //CGSolver(mesh, rhs, dispatcher, x2, 10, 0.00001);
+    int size = 25;
+    //using VecDSL = HPM::dataType::Vec<float,numNodes>;
+    CGSolver(mesh, rhs, dispatcher, x2, size, 50, 0.001);
     //outputVec(x2, "resultVec CGSolver", numNodes);
+
+    char buff[FILENAME_MAX]; //create string buffer to hold path
+    GetCurrentDir(buff, FILENAME_MAX);
+    string currentWorkingDir(buff);
+
+    string foldername = "results2DPoisson";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
+    string filename   = "Sequential_2DPoisson_irregular22NodeMesh";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
+
+    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, filename, x2, "resultX");
 
 
     return 0;
@@ -87,6 +115,22 @@ int main(int argc, char** argv)
 #endif
 
 /*----------------------------------------------------------------- (A) Functions (Implementation): -----------------------------------------------------------*/
+template<typename MeshT, typename BufferT, typename DispatcherT>
+void CreateStartVector(const MeshT & mesh, BufferT & startVec, DispatcherT & dispatcher)
+{
+    auto nodes { mesh.template GetEntityRange<0>() };
+    dispatcher.Execute(ForEachEntity(
+                           nodes,
+                           tuple(Write(Node(startVec))),
+                           [&](auto const& node, const auto& iter, auto& lvs)
+    {
+        auto& startVec = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        startVec[0]    = 0;
+    }));
+
+    return;
+}
+
 //!
 //! \param mesh unitcube splitted into 5 tetrahedrons
 //! \param rhs right-hand side which should be assembled in this looptype as vector per tetrahedron
@@ -139,18 +183,39 @@ void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT b
         const auto& gradients = GetGradients2DP1();
         const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
         const auto& nodes = cell.GetTopology().GetNodes();
-        //const auto& tmp  = cell.GetGeometry().GetJacobian();
-        const /*Matrix*/float tmp[dim][dim] = { (nodes[0][0] - nodes[1][0]), (nodes[2][0] - nodes[1][0]),
-                            (nodes[0][1] - nodes[1][1]), (nodes[2][1] - nodes[1][1])
-                            };
-        const float detJ = std::abs((tmp[0][0]*tmp[1][1])-(tmp[0][1]*tmp[1][0]));
+        const auto& tmp  = cell.GetGeometry().GetJacobian();
+//        const /*Matrix*/float tmp[dim][dim] = { (nodes[0][0] - nodes[1][0]), (nodes[2][0] - nodes[1][0]),
+//                            (nodes[0][1] - nodes[1][1]), (nodes[2][1] - nodes[1][1])
+//                            };
+        const float detJ = std::abs(tmp.Determinant());//std::abs((tmp[0][0]*tmp[1][1])-(tmp[0][1]*tmp[1][0]));
 
-        //const auto& inv   = tmp.Invert();
-        //const auto& invJT = inv.Transpose();
+        if (detJ == 0.0)
+        {
+            for (const auto& node : cell.GetTopology().template GetEntities<0>() )
+            {
+                auto coords = node.GetTopology().GetVertices();
+                cout<<coords[0][0]<<"     "<< coords[0][1] << endl;
+            }
+        }
+
+        const auto M = [&]() {
+                ::HPM::dataType::Matrix<float, nrows, ncols> matrix;
+                for (int col = 0; col < ncols; ++col)
+                {
+                    for (int row = 0; row < nrows; ++row)
+                    {
+                        matrix[row][col] = (col == row ? detJ / 60.0 : detJ / 120.0);
+                    }
+                }
+                return matrix;
+            }();
+
+        const auto& inv   = tmp.Invert();
+        const auto& invJT = inv.Transpose();
         // invert and transpose tmp
-        const /*Matrix*/float invJT[dim][dim] = { ( 1/detJ) * tmp[1][1], (-1/detJ) * tmp[1][0],
-                              (-1/detJ) * tmp[0][1], ( 1/detJ) * tmp[0][0]
-                              };
+//        const /*Matrix*/float invJT[dim][dim] = { ( 1/detJ) * tmp[1][1], (-1/detJ) * tmp[1][0],
+//                              (-1/detJ) * tmp[0][1], ( 1/detJ) * tmp[0][0]
+//                              };
 
         // sigma: random scalar value
         float sigma = 2;
@@ -167,18 +232,21 @@ void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT b
 
         for (int col = 0; col < ncols; ++col)
         {
-            //const auto& gc = invJT * gradients[col];
-            float gc[2] = { v * (invJT[0][0] * gradients[col][0]) + (invJT[0][1] * gradients[col][1]),
-                               v * (invJT[1][0] * gradients[col][0]) + (invJT[1][1] * gradients[col][1])
-                               };
+            const auto& gc = invJT * gradients[col];
+//            float gc[2] = { v * (invJT[0][0] * gradients[col][0]) + (invJT[0][1] * gradients[col][1]),
+//                               v * (invJT[1][0] * gradients[col][0]) + (invJT[1][1] * gradients[col][1])
+//                               };
             for (int row = 0; row < nrows; ++row)
             {
                 //float val      = 0.5;//_detJ[row][col];
                 //const auto& gr = invJT * gradients[row];
-                float gr[2] = { (invJT[0][0] * gradients[row][0]) + (invJT[0][1] * gradients[row][1]),
-                                   (invJT[1][0] * gradients[row][0]) + (invJT[1][1] * gradients[row][1])
-                                   };
-                result[col]   += ((gc[0]*gr[0])+(gc[1]*gr[1])) * _d[row];
+//                float gr[2] = { (invJT[0][0] * gradients[row][0]) + (invJT[0][1] * gradients[row][1]),
+//                                   (invJT[1][0] * gradients[row][0]) + (invJT[1][1] * gradients[row][1])
+//                                   };
+                //result[col]   += ((gc[0]*gr[0])+(gc[1]*gr[1])) * _d[row];
+                float val      = M[row][col];
+                const auto& gr = invJT * gradients[row];
+                result[col]   += ((gc*gr) * val) * _d[row];
             }
         }
 
@@ -187,8 +255,8 @@ void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT b
             sBuffer[nodeIdSet[col]] += result[col];
     }));
 
-    for (int i = 0; i < sBuffer.GetSize(); ++i)
-        cout << "sBuffer["<<i<<"]:" << sBuffer[i] << endl;
+//    for (int i = 0; i < sBuffer.GetSize(); ++i)
+//        cout << "sBuffer["<<i<<"]:" << sBuffer[i] << endl;
 
     return;
 }
@@ -197,10 +265,11 @@ void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT b
 //! conjugated gradient method without matrix vector operations
 //!
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecDslT>
-auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT
+auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDslT & x, /*const*/ int const & size,
+              const int & numSolverIt, const float & tol)->VecDslT
 {
-    int const size = 11;//8;//x.size();
-    using VecDSL = HPM::dataType::Vec<float,size>;
+    //int const size = 25;//11;//8;//x.size();
+    //using VecDSL = HPM::dataType::Vec<float,25>;
     float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
 
     VecDSL r; Convert(rhs,r); // r = residuum (with x = null vector as start vector: r = rhs-A*x = rhs-0 = rhs)
@@ -209,6 +278,7 @@ auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDsl
     for (int it = 0; it < numSolverIt; ++it)
     {
         HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0>> sBuffer(mesh);
+        //cout << "size sBuffer = " << sBuffer.GetSize() << endl;
         AssembleMatrixVecProduct(mesh, d, bodyObj, sBuffer);
         VecDSL s; Convert(sBuffer, s);
         r_scPr = r * r; // <r,r> scalar product
@@ -221,6 +291,8 @@ auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDsl
         eps = std::sqrt(r * r);
         if (eps < tol)
             it = numSolverIt;
+
+        outputVec(x, "resultVec CGSolver", numNodes);
     }
 
     return x;
