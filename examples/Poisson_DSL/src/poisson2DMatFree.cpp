@@ -92,23 +92,21 @@ int main(int argc, char** argv)
     SetRHS(mesh, rhs, true, dispatcher);
 
     /*------------------------------------------(3) Solve: CGSolver -------------------------------------------------------------------------------------------*/
-    HPM::dataType::Vec<float, numNodes> x2;
-    for (int i = 0; i < numNodes; ++i) {x2[i]=0;} // set start vector
-
-    int size = 25;
-    //using VecDSL = HPM::dataType::Vec<float,numNodes>;
-    CGSolver(mesh, rhs, dispatcher, x2, size, 50, 0.001);
-    //outputVec(x2, "resultVec CGSolver", numNodes);
-
     char buff[FILENAME_MAX]; //create string buffer to hold path
     GetCurrentDir(buff, FILENAME_MAX);
     string currentWorkingDir(buff);
-
     string foldername = "results2DPoisson";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
     string filename   = "Sequential_2DPoisson_irregular22NodeMesh";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
 
-    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, filename, x2, "resultX");
+    HPM::dataType::Vec<float, numNodes> x;
+    for (int i = 0; i < numNodes; ++i) {x[i]=0;} // set start vector
 
+    writeVTKOutputParabolicWO_BC(mesh, currentWorkingDir, foldername, "Sequential_2DPoisson_irregular22NodeMesh_xStart", x, "resultX");
+
+    int size = 25;
+    CGSolver(mesh, rhs, dispatcher, x, size, 50, 0.001);
+
+    writeVTKOutputParabolicWO_BC(mesh, currentWorkingDir, foldername, filename, x, "resultX");
 
     return 0;
 }
