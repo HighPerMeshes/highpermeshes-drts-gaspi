@@ -18,7 +18,7 @@
  *                  u(0) = 1  on \Omega_1 and u(0) = 0  on \Omega_2,               *
  *                  w(0) = 0  on \Omega_1 and w(0) = 1  on \Omega_2.               *
  *                                                                                 *
- * last change: 26.08.2020                                                         *
+ * last change: 31.08.2020                                                         *
  * ------------------------------------------------------------------------------ **/
 
 #ifndef MONODOMAIN_CPP
@@ -58,8 +58,8 @@ using Dofs           = dataType::Dofs<I...>;
 using Vector         = vector<float>;
 using Matrix         = vector<Vector>;
 using CoordinateType = dataType::Vec<float,3>;
-using Mesh           = HPM::mesh::Mesh<CoordinateType, HPM::entity::Simplex>; // for sequential case
-//using Mesh           = mesh::PartitionedMesh<CoordinateType, entity::Simplex>; //for distributed case
+//using Mesh           = HPM::mesh::Mesh<CoordinateType, HPM::entity::Simplex>; // for sequential case
+using Mesh           = mesh::PartitionedMesh<CoordinateType, entity::Simplex>; //for distributed case
 constexpr int dim    = Mesh::CellDimension;
 
 /*-------------------------------------------------------------- (A) Functions: -------------------------------------------------------------------------------*/
@@ -78,29 +78,29 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, Dispatche
 template<typename BufferT, typename VectorT, typename DispatcherT, typename MeshT>
 void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, DispatcherT & dispatcher, const MeshT & mesh);
 
-template<typename BufferT, typename BufferTGlobal, typename MeshT, typename DispatcherT>
+template<typename BufferT, typename MeshT, typename DispatcherT>
 void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, DispatcherT & dispatcher,
-                             const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
-                             const float & a, const float & b, const float & eps, const bool & IStimOpt);
+                             const BufferT & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
+                             const float & a, const float & b, const float & eps, const bool & IStimOpt, const BufferT & IStim);
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
 
     /*------------------------------------------(1a) Sequential case: -----------------------------------------------------------------------------------------*/
-    HPM::drts::Runtime hpm { HPM::GetBuffer{} };
-    HPM::SequentialDispatcher dispatcher;
-    ConfigParser CFG("config3D.cfg");
-    string meshFile = CFG.GetValue<string>("MeshFile");
-    const Mesh mesh = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader>(meshFile);
-
-    /*------------------------------------------(1b) Distributed case: ----------------------------------------------------------------------------------------*/
-//    drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
-//    DistributedDispatcher dispatcher{hpm.gaspi_context, hpm.gaspi_segment, hpm};
+//    HPM::drts::Runtime hpm { HPM::GetBuffer{} };
+//    HPM::SequentialDispatcher dispatcher;
 //    ConfigParser CFG("config3D.cfg");
 //    string meshFile = CFG.GetValue<string>("MeshFile");
-//    const Mesh mesh      = Mesh::template CreateFromFile<AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
-//            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
+//    const Mesh mesh = Mesh::template CreateFromFile<HPM::auxiliary::AmiraMeshFileReader>(meshFile);
+
+    /*------------------------------------------(1b) Distributed case: ----------------------------------------------------------------------------------------*/
+    drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
+    DistributedDispatcher dispatcher{hpm.gaspi_context, hpm.gaspi_segment, hpm};
+    ConfigParser CFG("config3D.cfg");
+    string meshFile = CFG.GetValue<string>("MeshFile");
+    const Mesh mesh      = Mesh::template CreateFromFile<AmiraMeshFileReader, ::HPM::mesh::MetisPartitioner>
+            (meshFile, {hpm.GetL1PartitionNumber(), hpm.GetL2PartitionNumber()}, hpm.gaspi_runtime.rank().get());
 
     /*------------------------------------------(2) Set directory-,folder- and filename of result -------------------------------------------------------------*/
     char buff[FILENAME_MAX]; //create string buffer to hold path
@@ -108,12 +108,13 @@ int main(int argc, char** argv)
     string currentWorkingDir(buff);
 
     string foldername = "Test3D";
-    string filename   = "Test3D_SequentialDispatcher1000It";
+    string filename   = "Test3DIStim_DistrDisp2_";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt = 200;
+    int numIt    = 200;
+    int numNodes = mesh.template GetNumEntities<0>();
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
-    SetStartValues(4, h, a, b, eps, sigma, u0L, u0R, w0L, w0R);
+    SetStartValues(2, h, a, b, eps, sigma, u0L, u0R, w0L, w0R);
 
     const float maxZ = -3.5;
 
@@ -123,6 +124,9 @@ int main(int argc, char** argv)
     Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> w(mesh);
     CreateStartVector(mesh, w, w0L, w0R, maxZ, dispatcher);
 
+    Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> IStim(mesh);
+    CreateStartVector(mesh, u, 1.0, 0.0, maxZ, dispatcher);
+
     Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> u_deriv(mesh);
     Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> w_deriv(mesh);
     Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> f(mesh);
@@ -131,35 +135,33 @@ int main(int argc, char** argv)
     Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
 
-    // check if startvector was set correctly by creating output file at time step zero
-    stringstream s; s << 0;
-    string name = filename + s.str();
-    writeVTKOutputParabolicWO_BC(mesh, currentWorkingDir, foldername, name, u, "resultU");
-
     // compute u and w
     for (int j = 0; j < numIt; ++j)
     {
-        //cout << "-----------------------------Iterationstep(u):   " << j << "---------------------------------------" << endl;
-
         bool IStimOpt;
         if (j == 0) IStimOpt = true;
         else IStimOpt = false;
 
-        computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, dispatcher, u, w, lumpedMat, sigma, a, b, eps, IStimOpt);
+        computeIionUDerivWDeriv(f, u_deriv, w_deriv, mesh, dispatcher, u, w, lumpedMat, sigma, a, b, eps, IStimOpt, IStim);
         FWEuler(u, u_deriv, h, dispatcher, mesh);
         FWEuler(w, w_deriv, h, dispatcher, mesh);
 
-    }
-
-    // write output files with result u
-    for (int k = 0; k < numIt; ++k)
-    {
-        stringstream s; s << k+1;
-
-        if ((k+1)%10 == 0)
+        const auto u_gather = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+        std::vector<float> u_total(numNodes);
+        const std::size_t num_buffers = u_gather.size ()/ numNodes;
+        for (std::size_t i = 0; i < numNodes; ++i)
         {
-            name = filename + s.str();
-            writeVTKOutputParabolicWO_BC(mesh, currentWorkingDir, foldername, name, u, "resultU");
+            u_total[i] = 0;
+            for (std::size_t k = 0; k < num_buffers; ++k)
+                u_total[i] += u_gather[k * numNodes + i];
+        }
+
+        // write output files with result u
+        if ((j+1)%10 == 0)
+        {
+            stringstream s; s << j+1;
+            string name = filename + s.str();
+            writeVTKOutputParabolicWO_BC(mesh, currentWorkingDir, foldername, name, u_total, "U");
         }
     }
 
@@ -190,41 +192,15 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
     else if (option == 2)
     {
         // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
-        h     = 0.4; // step size
-        a     = 0.1;
-        b     = 1e-4;
-        eps   = 0.005;
-        sigma = 0.1;
-        u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
-        u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
-        w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
-        w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
-    }
-    else if (option == 3)
-    {
-        // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
-        h     = 0.4; // step size
-        a     = 0.1;
-        b     = 1e-4;
-        eps   = 1e-4;
-        sigma = 0.1;
-        u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
-        u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
-        w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
-        w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
-    }
-    else if (option == 4)
-    {
-        // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
-        h     = 0.0005; // time step size h <= 0.0005
+        h     = 0.005; // time step size h <= 0.0005
         a     = 0.7;
         b     = 1e-4;
-        eps   = 1;
+        eps   = 4.0;//0.5; //1;
         sigma = 0.1; // diffusion tensor sigma <= 0.1
-        u0L   = 1.F; // values for start vector u
+        u0L   = 0.F; //1.F; // values for start vector u
         u0R   = 0.F; // values for start vector u
         w0L   = 0.F;  // values for start vector w
-        w0R   = 1.F;  // values for start vector w
+        w0R   = 0.F;  // values for start vector w
     }
     else
         printf("There is no option choosen for start value settings. Create your own option or choose one of the existing.");
@@ -247,10 +223,10 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
     {
         auto &startVec = HPM::dof::GetDofs<0>(std::get<0>(lvs));
         auto coords = node.GetTopology().GetVertices();
-        if ( (coords[0][2] < value) /*&& (coords[0][1] < maxY)*/ )
-            startVec[0] = startValLeft; //startVec[node.GetTopology().GetIndex()] = startValLeft;
+        if ( (coords[0][2] < value) )
+            startVec[0] = startValLeft;
         else
-            startVec[0] = startValRight; //startVec[node.GetTopology().GetIndex()] = startValRight;
+            startVec[0] = startValRight;
     }));
 
     return;
@@ -360,28 +336,24 @@ void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, Dispat
 //!
 //! \brief Compute ion current, derivation of u and derivation of w at time step t.
 //!
-template<typename BufferT, typename BufferTGlobal, typename MeshT, typename DispatcherT>
+template<typename BufferT, typename MeshT, typename DispatcherT>
 void computeIionUDerivWDeriv(BufferT & f, BufferT & u_deriv, BufferT & w_deriv, const MeshT & mesh, DispatcherT & dispatcher,
-                             const BufferTGlobal & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
-                             const float & a, const float & b, const float & eps, const bool & IStimOpt)
+                             const BufferT & u, const BufferT & w, const BufferT & lumpedM, const float & sigma,
+                             const float & a, const float & b, const float & eps, const bool & IStimOpt, const BufferT & IStim)
 {
     Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> s(mesh);
     AssembleMatrixVecProduct2D(mesh, u, dispatcher, s);
 
-    float IStimVal;
-    if (IStimOpt) IStimVal = 10.0;
-    else IStimVal = 0.0;
-
     auto vertices {mesh.template GetEntityRange<0>()};
     dispatcher.Execute(ForEachEntity(vertices, tuple(
-                                         ReadWrite(Node(f)),/*Read*/Write(Node(u_deriv)),/*Read*/Write(Node(w_deriv))),
+                                         ReadWrite(Node(f)), Write(Node(u_deriv)), Write(Node(w_deriv))),
                                      [&](auto const& vertex, const auto& iter, auto& lvs)
     {    
         int id      = vertex.GetTopology().GetIndex();
         f[id]       = (u[id] * (1-u[id]) * (u[id]-a)) - w[id];
-        u_deriv[id] = -1 * ((1/lumpedM[id]) * sigma * s[id]) + f[id];
-        if (id == 0) u_deriv[id] += IStimVal; // random choice of node (here node with id 0)
-        w_deriv[id] = eps*(u[id]-b*w[id]);
+        if (IStimOpt) f[id] += IStim[id];
+        u_deriv[id] = ((1/lumpedM[id]) * -1 * sigma * s[id]) + f[id];
+        w_deriv[id] = eps*(u[id]-(b*w[id]));
     }));
 
     return;
