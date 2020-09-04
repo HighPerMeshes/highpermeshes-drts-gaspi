@@ -98,10 +98,10 @@ void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx);
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
 {
-    bool optionAllGather = false;
+    bool optionAllGather = true;
     bool optionWriteLoop = false;
     bool optionWriteOut  = false;
-    bool optionMatrixVecProductTest = true;
+    bool optionMatrixVecProductTest = false;
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
     drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
@@ -116,15 +116,15 @@ int main(int argc, char** argv)
     GetCurrentDir(buff, FILENAME_MAX);
     string currentWorkingDir(buff);
 
-    string foldername = "testStiffMatU";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
-    string filename   = "testProcesses";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
+    string foldername = "test3DOptFor2DCase";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
+    string filename   = "test3DOptFor2DCase100x100SmallTau_";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
     //string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt = 200;//400;//1000;
+    int numIt = 500;//2;//200;//400;//1000;
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
     //auto file = CreateFile(currentWorkingDir, foldername, parameterFilename);
-    SetStartValues(0, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
+    SetStartValues(6, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = ceil(sqrt(numNodes)/4);
@@ -166,13 +166,13 @@ int main(int argc, char** argv)
     for (int j = 0; j < numIt; ++j)
     {
         stringstream s; s << j+1;
-        if((j+1)%10 == 0)
-            optionWriteOut = true;
-        else
-            optionWriteOut = false;
+//        if((j+1)%10 == 0)
+//            optionWriteOut = true;
+//        else
+//            optionWriteOut = false;
 
         computeIionUDerivWDeriv(mesh, dispatcher, f, u_deriv, w_deriv, u, w, lumpedMat, StiffVecU, sigma, a, b, eps);
-        FWEuler(mesh, dispatcher, u, u_deriv, h, optionWriteOut, mtx, s);
+        FWEuler(mesh, dispatcher, u, u_deriv, h, optionWriteOut=false, mtx, s);
         FWEuler(mesh, dispatcher, w, w_deriv, h, false, mtx, s);
 
 
@@ -226,16 +226,18 @@ int main(int argc, char** argv)
         Vector array; array.resize(numNodes);
         for (int k = 0; k < numIt; ++k)
         {
-            if ((k+1)%10 == 0)
-            {
+//            if ((k+1)%10 == 0)
+//            {
                 stringstream s; s << k+1;
                 string distFileName = "testDist" + s.str() + ".txt";
                 WriteFStreamToArray(distFileName.c_str(), array, mtx);
 
                 cout << "-----------------------------Iterationstep(array):   " << k << "---------------------------------------" << endl;
-                name = filename + s.str();
+                // name = filename + s.str(); testMD2D_proc2_
+                // name = "testMD2D_proc2_" + s.str();
+                name = "test" + s.str();
                 writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, array, "resultU");
-            }
+            //}
         }
     }
 
@@ -296,6 +298,44 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
         a     = 0.1;
         b     = 1e-4;
         eps   = 1e-4;
+        sigma = -0.1;
+        u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
+        u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
+        w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+        w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+    }
+    else if (option == 4)
+    {
+        h     = 0.00001; // time step size h <= 0.0005
+        a     = 0.7;
+        b     = 1e-4;
+        eps   = 4.0;//0.5; //1;
+        sigma = 10; // diffusion tensor sigma <= 0.1
+        u0L   = 1.F; //1.F; // values for start vector u
+        u0R   = 0.F; // values for start vector u
+        w0L   = 0.F;  // values for start vector w
+        w0R   = 0.F;  // values for start vector w
+    }
+    else if (option == 5)
+    {
+        // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
+        h     = 0.5; // step size
+        a     = 0.1;
+        b     = 1e-4;
+        eps   = 1e-3;//0.001;
+        sigma = -0.1;
+        u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
+        u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
+        w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+        w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+    }
+    else if (option == 6)
+    {
+        // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
+        h     = 0.005; // step size
+        a     = 0.7;
+        b     = 1e-3;
+        eps   = 1e-3;//0.001;
         sigma = -0.1;
         u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
         u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
@@ -452,6 +492,30 @@ void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, /*c
             WriteLoop(mutex, fstream, vertices, vecOld)
       );
         fstream.close();
+
+//        dispatcher.Execute(
+//                    ForEachEntity(
+//                        vertices,
+//                        tuple(ReadWrite(Node(vecOld)), ReadWrite(Node(vecDeriv))),
+//                        [&](auto const& vertex, const auto& iter, auto& lvs) {
+//            auto& vecOld   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+//            auto& vecDeriv = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<1>(lvs));
+//            vecOld[0] += h*vecDeriv[0];
+//        }));
+
+//        string distFileName = "testMD2D_proc2_" + fstreamNumber.str() + ".txt";
+//        ofstream fstream {distFileName};
+//        dispatcher.Execute(
+//                    ForEachEntity(
+//                        vertices,
+//                        tuple(ReadWrite(Node(vecOld)), ReadWrite(Node(vecDeriv))),
+//                        [&](auto const& vertex, const auto& iter, auto& lvs) {
+//            auto& vecOld   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+//        }),
+//            WriteLoop(mutex, fstream, vertices, vecOld)
+//        );
+
+//        fstream.close();
     }
     else {
         dispatcher.Execute(
@@ -467,18 +531,6 @@ void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, /*c
 
     return;
 }
-
-
-//auto vertices {mesh.template GetEntityRange<0>()};
-//dispatcher.Execute(
-//        ForEachEntity(
-//            vertices,
-//            tuple(ReadWrite(Node(vecOld)), Read(Node(vecDeriv))),
-//            [&](auto const& vertex, const auto& iter, auto& lvs) {
-//    auto& vecOld   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-//    auto& vecDeriv = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<1>(lvs));
-//    vecOld[0] += h*vecDeriv[0];
-//}))
 
 //!
 //! \brief Compute ion current, derivation of u and derivation of w at time step t.
@@ -507,7 +559,7 @@ void computeIionUDerivWDeriv(const MeshT & mesh, DispatcherT & dispatcher, Buffe
 
         f[0]       = (u[0] * (1-u[0]) * (u[0]-a)) - w[0];
         u_deriv[0] = ((1/lumpedM[0]) * sigma * s[0]) + f[0];
-        w_deriv[0] = eps*(u[0]-b*w[0]);
+        w_deriv[0] = eps*(u[0]-(b*w[0]));
 
         //s[0] = w[0];
 

@@ -108,15 +108,15 @@ int main(int argc, char** argv)
     string currentWorkingDir(buff);
 
     string foldername = "Test3D";
-    string filename   = "Test3DIStim_DistrDisp2_";
+    string filename   = "Test3D_ParameterSetting3_";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt    = 200;
+    int numIt    = 500;
     int numNodes = mesh.template GetNumEntities<0>();
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
-    SetStartValues(2, h, a, b, eps, sigma, u0L, u0R, w0L, w0R);
+    SetStartValues(3, h, a, b, eps, sigma, u0L, u0R, w0L, w0R);
 
-    const float maxZ = -3.5;
+    const float maxZ = -1.5;//-3.5;
 
     Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> u(mesh);
     CreateStartVector(mesh, u, u0L, u0R, maxZ, dispatcher);
@@ -157,7 +157,7 @@ int main(int argc, char** argv)
         }
 
         // write output files with result u
-        if ((j+1)%10 == 0)
+        if ((j+1)%20 == 0)
         {
             stringstream s; s << j+1;
             string name = filename + s.str();
@@ -178,7 +178,6 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
 {
     if (option == 1)
     {
-        // input options for small mesh 5x5 (config.cfg -> mesh2D_test5x5.am)
         h     = 0.015; // step size
         a     = -0.1;
         b     = 0.008;
@@ -191,16 +190,28 @@ void SetStartValues(int option, float& h, float& a, float& b, float& eps, float&
     }
     else if (option == 2)
     {
-        // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
-        h     = 0.005; // time step size h <= 0.0005
+        h     = 0.00001; // time step size h <= 0.0005
         a     = 0.7;
         b     = 1e-4;
         eps   = 4.0;//0.5; //1;
-        sigma = 0.1; // diffusion tensor sigma <= 0.1
+        sigma = 10; // diffusion tensor sigma <= 0.1
         u0L   = 0.F; //1.F; // values for start vector u
         u0R   = 0.F; // values for start vector u
         w0L   = 0.F;  // values for start vector w
         w0R   = 0.F;  // values for start vector w
+    }
+    else if (option == 3)
+    {
+        // input options for bigger mesh 100x100 (config.cfg -> mesh2D.am)
+        h     = 0.005; // step size
+        a     = 0.1;
+        b     = 1e-4;
+        eps   = 1e-3;//0.001;
+        sigma = 0.1;
+        u0L   = 1.F; // values for start vector u on \Omega_1 and \Omega_2
+        u0R   = 0.F; // values for start vector u on \Omega_1 and \Omega_2
+        w0L   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
+        w0R   = 0.F;  // values for start vector w on \Omega_1 and \Omega_2
     }
     else
         printf("There is no option choosen for start value settings. Create your own option or choose one of the existing.");
