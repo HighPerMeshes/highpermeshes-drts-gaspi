@@ -105,7 +105,7 @@ TEST_F(GlobalBufferTest_2d, AllReduce_GlobalDofs)
         AllCells,
         std::tuple(Write(Global(buffer))),
         [&](const auto&, auto&&, auto& lvs) {
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            auto& global_dofs = std::get<0>(lvs);
             global_dofs[0] = 3 * static_cast<int>(1 + proc_id);
             global_dofs[3] = 12 * static_cast<int>(2 + proc_id);
         })
@@ -140,7 +140,7 @@ TEST_F(GlobalBufferTest_3d, AllReduce_GlobalDofs)
         AllCells,
         std::tuple(Write(Global(buffer))),
         [&](const auto&, auto&&, auto& lvs) {
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            auto& global_dofs = std::get<0>(lvs);
             global_dofs[0] = 3 * static_cast<int>(1 + proc_id);
             global_dofs[3] = 12 * static_cast<int>(2 + proc_id);
         })
@@ -177,7 +177,7 @@ TEST_F(GlobalBufferTest_2d, AllGather_CellCount)
         std::tuple(Write(Global(buffer))),
         [&](const auto&, auto&&, auto& lvs) {
             using namespace ::HPM::atomic;
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            auto& global_dofs = std::get<0>(lvs);
             AtomicAdd(global_dofs[0], 1);
         })
     );    
@@ -207,7 +207,7 @@ TEST_F(GlobalBufferTest_3d, AllGather_CellCount)
         std::tuple(Write(Global(buffer))),
         [&](const auto&, auto&&, auto& lvs) {
             using namespace ::HPM::atomic;
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            auto& global_dofs = std::get<0>(lvs);
             AtomicAdd(global_dofs[0], 1);
         })
     );    
@@ -242,7 +242,7 @@ TEST_F(GlobalBufferTest_2d, AllGather)
         [&](const auto&, auto&&, auto& lvs) {
             using namespace ::HPM::atomic;
 
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            auto& global_dofs = std::get<0>(lvs);
             AtomicAdd(global_dofs[0], 1);
         })
     );    
@@ -262,8 +262,8 @@ TEST_F(GlobalBufferTest_2d, AllGather)
         AllCells,
         std::tuple(ReadWrite(Cell(buffer)), ReadWrite(Global(buffer))),
         [&](const auto&, auto&&, auto& lvs) {
-            auto& cell_dofs = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<1>(lvs));
+            auto& cell_dofs = std::get<0>(lvs);
+            auto& global_dofs = std::get<1>(lvs);
            
             cell_dofs[0] = 1 + proc_id;
             cell_dofs[1] = -1 * static_cast<int>(1 + proc_id);
@@ -358,7 +358,7 @@ TEST_F(GlobalBufferTest_3d, AllGather)
         [&](const auto&, auto&&, auto& lvs) {
             using namespace ::HPM::atomic;
 
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<0>(lvs));
+            auto& global_dofs = std::get<0>(lvs);
             AtomicAdd(global_dofs[0], 1);
         })
     );    
@@ -378,8 +378,8 @@ TEST_F(GlobalBufferTest_3d, AllGather)
         AllCells,
         std::tuple(ReadWrite(Cell(buffer)), ReadWrite(Global(buffer))),
         [&](const auto&, auto&&, auto& lvs) {
-            auto& cell_dofs = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-            auto& global_dofs = dof::GetDofs<dof::Name::Global>(std::get<1>(lvs));
+            auto& cell_dofs = std::get<0>(lvs);
+            auto& global_dofs = std::get<1>(lvs);
            
             cell_dofs[0] = 1 + proc_id;
             cell_dofs[1] = -1 * static_cast<int>(1 + proc_id);

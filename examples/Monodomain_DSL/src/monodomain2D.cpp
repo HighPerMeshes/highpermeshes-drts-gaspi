@@ -281,7 +281,7 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, LoopBodyT & body, BufferT & lu
                         std::tuple(ReadWrite(Node(lumpedMat))),
                         [&](auto const& cell, const auto& iter, auto& lvs)
     {
-        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        auto& lumpedMat = std::get<0>(lvs);
         auto tmp        = cell.GetGeometry().GetJacobian();
         float detJ      = std::abs(tmp.Determinant());
 

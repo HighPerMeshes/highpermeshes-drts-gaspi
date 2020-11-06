@@ -32,11 +32,11 @@ int main(int argc, char **argv)
         const auto &localMap{DgNodeMap.Get(element, face)};
 
         HPM::ForEach(DG::NumSurfaceNodes, [&](const std::size_t m) {
-          const auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-          const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
+          const auto &fieldH = std::get<0>(lvs);
+          const auto &fieldE = std::get<1>(lvs);
 
-          auto &NeighboringFieldH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
-          auto &NeighboringFieldE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
+          auto &NeighboringFieldH = std::get<2>(lvs);
+          auto &NeighboringFieldE = std::get<3>(lvs);
 
           const Vec3D &dH = Edg * HPM::DG::Delta(fieldH, NeighboringFieldH, m, localMap); //!< fields differences
           const Vec3D &dE = Edg * HPM::DG::DirectionalDelta(fieldE, NeighboringFieldE, face, m, localMap);
@@ -44,8 +44,8 @@ int main(int argc, char **argv)
           const Vec3D &flux_H = (dH - (dH * face_unit_normal) * face_unit_normal - CrossProduct(face_unit_normal, dE)); //!< fields fluxes
           const Vec3D &flux_E = (dE - (dE * face_unit_normal) * face_unit_normal + CrossProduct(face_unit_normal, dH));
 
-          auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<4>(lvs));
-          auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<5>(lvs));
+          auto &rhsH = std::get<4>(lvs);
+          auto &rhsE = std::get<5>(lvs);
 
           HPM::ForEach(DG::numVolNodes, [&](const std::size_t n) {
             rhsH[n] += DG::LIFT[face_index][m][n] * flux_H;

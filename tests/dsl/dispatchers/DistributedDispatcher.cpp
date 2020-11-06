@@ -57,17 +57,17 @@ TEST_F(DistributedDispatcherTest, NeighborPattern)
     HPM::DistributedDispatcher body{gaspi.gaspi_context, gaspi.gaspi_segment, device};
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Write(Cell(buffer))), [](const auto& /* not_needed */, const auto& /* not_needed */, auto& local_view) {
-        auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+        auto& buffer = std::get<0>(local_view);
         buffer[0] = -1;
     }));
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Write(Cell(buffer))),
                                [](const auto& /* not_needed */, const auto& /* not_needed */, auto& local_view) {
-                                   auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+                                   auto& buffer = std::get<0>(local_view);
                                    buffer[0] = 1;
                                }),
                  ForEachIncidence<Mesh::CellDimension - 1>(AllCells, std::tuple(Read(NeighboringMeshElementOrSelf(buffer))), [&](const auto& cell, const auto face, const auto& /* not_needed */, auto& local_view) {
-                     auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+                     auto& buffer = std::get<0>(local_view);
                      EXPECT_EQ(buffer[0], 1) << "This L2: " << mesh.EntityToL2P(cell) << " Other L2: " << mesh.EntityToL2P(face.GetTopology().GetNeighboringCell());
                  }));
 }
@@ -83,13 +83,13 @@ TEST_F(DistributedDispatcherTest, NeighborPatternSeparateExecutes)
     HPM::DistributedDispatcher body{gaspi.gaspi_context, gaspi.gaspi_segment, device};
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Write(Cell(buffer))), [](const auto& /* not_needed */, const auto& /* not_needed */, auto& local_view) {
-        auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+        auto& buffer = std::get<0>(local_view);
         buffer[0] = 1;
     }));
 
     body.Execute(ForEachIncidence<Mesh::CellDimension - 1>(AllCells, std::tuple(Read(NeighboringMeshElementOrSelf(buffer))),
                                                            [](const auto& /* not_needed */, const auto /* not_needed */, const auto& /* not_needed */, auto& local_view) {
-                                                               auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+                                                               auto& buffer = std::get<0>(local_view);
                                                                EXPECT_EQ(buffer[0], 1);
                                                            }));
 }
@@ -106,17 +106,17 @@ TEST_F(DistributedDispatcherTest, SimplePattern)
     HPM::DistributedDispatcher body{gaspi.gaspi_context, gaspi.gaspi_segment, device};
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Write(Cell(buffer))), [](const auto& /* not_needed */, const auto& /* not_needed */, auto& local_view) {
-        auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+        auto& buffer = std::get<0>(local_view);
         buffer[0] = -1;
     }));
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Write(Cell(buffer))),
                                [](const auto& e, const auto& /* not_needed */, auto& local_view) {
-                                   auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+                                   auto& buffer = std::get<0>(local_view);
                                    buffer[0] = e.GetTopology().GetIndex();
                                }),
                  ForEachEntity(AllCells, std::tuple(Read(Cell(buffer))), [](const auto& e, const auto& /* not_needed */, auto& local_view) {
-                     auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+                     auto& buffer = std::get<0>(local_view);
                      EXPECT_EQ(buffer[0], e.GetTopology().GetIndex());
                  }));
 }
@@ -133,12 +133,12 @@ TEST_F(DistributedDispatcherTest, SimplePatternSeparateExecution)
     HPM::DistributedDispatcher body{gaspi.gaspi_context, gaspi.gaspi_segment, device};
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Write(Cell(buffer))), [](const auto& e, const auto& /* not_needed */, auto& local_view) {
-        auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+        auto& buffer = std::get<0>(local_view);
         buffer[0] = e.GetTopology().GetIndex();
     }));
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Read(Cell(buffer))), [](const auto& e, const auto& /* not_needed */, auto& local_view) {
-        auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+        auto& buffer = std::get<0>(local_view);
         EXPECT_EQ(buffer[0], e.GetTopology().GetIndex());
     }));
 }
@@ -156,11 +156,11 @@ TEST_F(DistributedDispatcherTest, ContainingMeshElement)
 
     body.Execute(ForEachEntity(AllCells, std::tuple(Write(Cell(buffer))),
                                [](const auto& e, const auto& /* not_needed */, auto& local_view) {
-                                   auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+                                   auto& buffer = std::get<0>(local_view);
                                    buffer[0] = e.GetTopology().GetIndex();
                                }),
                  ForEachIncidence<Mesh::CellDimension - 1>(AllCells, std::tuple(Read(ContainingMeshElement(buffer))), [](const auto& e, const auto& /* not_needed */, const auto& /* not_needed */, auto& local_view) {
-                     auto& buffer = dof::GetDofs<2>(std::get<0>(local_view));
+                     auto& buffer = std::get<0>(local_view);
                      EXPECT_EQ(buffer[0], e.GetTopology().GetIndex());
                  }));
 }
