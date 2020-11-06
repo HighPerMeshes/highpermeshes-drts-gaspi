@@ -312,7 +312,7 @@ void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bo
                   std::tuple(ReadWrite(Node(rhs))),
                   [&](auto const& cell, const auto& iter, auto& lvs)
     {
-        auto& rhs                 = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        auto& rhs                 = std::get<0>(lvs);
         auto jacobianMat          = cell.GetGeometry().GetJacobian();
         double detJac             = jacobianMat.Determinant(); detJac = std::abs(detJac);
         const auto& node_indices  = cell.GetTopology().GetNodeIndices();
@@ -359,7 +359,7 @@ void SetBoundaryConditions(const MeshT & mesh, BufferT & rhs, bool optOutput, Pa
         {
             if (BCPerFaceId[i].first == face.GetTopology().GetIndex())
             {
-                auto& rhs = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+                auto& rhs = std::get<0>(lvs);
 
                 if(BCPerFaceId[i].second == 1) // inhom Neumann
                     SetInhomogeneousNeumann(face, rhs);
@@ -401,7 +401,7 @@ void SetGSM(const MeshT & mesh, BufferT & localMatrices, MatrixT & GSM, bool opt
                   [&](auto const& cell, const auto& iter, auto& lvs)
     {
         const int nrows = dim+1; const int ncols = dim+1;
-        auto& localMatrices   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        auto& localMatrices   = std::get<0>(lvs);
         const auto& gradients = GetGradientsDSL();
         const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
 

@@ -16,7 +16,7 @@ int main(int argc, char **argv)
           e.AllCells,
           std::tuple(ReadWrite(Node(buffer))),
           [&](auto const &cell, const auto &iter, auto &lvs) {
-            auto &sBuffer = dof::GetDofs<0>(std::get<0>(lvs));
+            auto &sBuffer = std::get<0>(lvs);
 
             const int nrows = dim + 1;
             const int ncols = dim + 1;

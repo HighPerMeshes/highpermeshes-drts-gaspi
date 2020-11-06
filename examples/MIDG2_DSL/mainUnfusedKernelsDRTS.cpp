@@ -89,7 +89,7 @@ int main(int argc, char **argv)
         std::tuple(Write(Cell(fieldE))),
         [&](const auto &cell, auto &&, auto& localVector0) {
             HPM::ForEach(DG::numVolNodes, [&](const auto &n) {
-                auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<0>(localVector0));
+                auto &fieldE = std::get<0>(localVector0);
                 const auto &nodeCoords = DG::LocalToGlobal(DG::referenceCoords[n], cell.GetTopology().GetNodes());
                 fieldE[n].y = sin(M_PI * nodeCoords.x) * sin(M_PI * nodeCoords.z); //!< initial conditions for y component of electric field
             });
@@ -149,11 +149,11 @@ int main(int argc, char **argv)
                 const auto &localMap{DgNodeMap.Get(element, face)};
 
                 HPM::ForEach(DG::NumSurfaceNodes, [&](const std::size_t m) {
-                    const auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-                    const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
+                    const auto &fieldH = std::get<0>(lvs);
+                    const auto &fieldE = std::get<1>(lvs);
 
-                    auto &NeighboringFieldH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
-                    auto &NeighboringFieldE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
+                    auto &NeighboringFieldH = std::get<2>(lvs);
+                    auto &NeighboringFieldE = std::get<3>(lvs);
 
                     const Vec3D &dH = Edg * HPM::DG::Delta(fieldH, NeighboringFieldH, m, localMap); //!< fields differences
                     const Vec3D &dE = Edg * HPM::DG::DirectionalDelta(fieldE, NeighboringFieldE, face, m, localMap);
@@ -163,8 +163,8 @@ int main(int argc, char **argv)
                     const Vec3D &flux_H = (dH - (dH*face_unit_normal) * face_unit_normal - CrossProduct(face_unit_normal, dE)); //!< fields fluxes
                     const Vec3D &flux_E = (dE - (dE*face_unit_normal) * face_unit_normal + CrossProduct(face_unit_normal, dH));
 
-                    auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<4>(lvs));
-                    auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<5>(lvs));
+                    auto &rhsH = std::get<4>(lvs);
+                    auto &rhsE = std::get<5>(lvs);
 
                     HPM::ForEach(DG::numVolNodes, [&](const std::size_t n) {
                         rhsH[n] += DG::LIFT[face_index][m][n] * flux_H;
@@ -193,16 +193,16 @@ int main(int argc, char **argv)
                 HPM::ForEach(DG::numVolNodes, [&](const std::size_t n) {
                     Mat3D derivative_E, derivative_H; //!< derivative of fields w.r.t reference coordinates
 
-                    const auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-                    const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
+                    const auto &fieldH = std::get<0>(lvs);
+                    const auto &fieldE = std::get<1>(lvs);
 
                     HPM::ForEach(DG::numVolNodes, [&](const std::size_t m) {
                         derivative_H += DyadicProduct(DG::derivative[n][m], fieldH[m]);
                         derivative_E += DyadicProduct(DG::derivative[n][m], fieldE[m]);
                     });
 
-                    auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
-                    auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
+                    auto &rhsH = std::get<2>(lvs);
+                    auto &rhsE = std::get<3>(lvs);
 
                     rhsH[n] += -Curl(D, derivative_E); //!< first half of right-hand-side of fields
                     rhsE[n] += Curl(D, derivative_H);
@@ -229,12 +229,12 @@ int main(int argc, char **argv)
                 [&](const auto&, const auto &iter, auto &lvs) {
                     const auto& RKstage = RungeKuttaCoeff<RealType>::rk4[iter % 5];
 
-                    auto &fieldH = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
-                    auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<1>(lvs));
-                    auto &rhsH = dof::GetDofs<dof::Name::Cell>(std::get<2>(lvs));
-                    auto &rhsE = dof::GetDofs<dof::Name::Cell>(std::get<3>(lvs));
-                    auto &resH = dof::GetDofs<dof::Name::Cell>(std::get<4>(lvs));
-                    auto &resE = dof::GetDofs<dof::Name::Cell>(std::get<5>(lvs));
+                    auto &fieldH = std::get<0>(lvs);
+                    auto &fieldE = std::get<1>(lvs);
+                    auto &rhsH = std::get<2>(lvs);
+                    auto &rhsE = std::get<3>(lvs);
+                    auto &resH = std::get<4>(lvs);
+                    auto &resE = std::get<5>(lvs);
 
                     HPM::ForEach(DG::numVolNodes, [&](const std::size_t n) {
                         resH[n] = RKstage[0] * resH[n] + timeStep * rhsH[n]; //!< residual fields
@@ -273,7 +273,7 @@ int main(int argc, char **argv)
         AllCells,
         std::tuple(Read(Cell(fieldE))),
         [&](const auto &element, const auto&, auto &lvs) {
-            const auto &fieldE = dof::GetDofs<dof::Name::Cell>(std::get<0>(lvs));
+            const auto &fieldE = std::get<0>(lvs);
 
             HPM::ForEach(DG::numVolNodes, [&](const std::size_t n) {
                 const auto &nodeCoords = DG::LocalToGlobal(DG::referenceCoords[n], element.GetTopology().GetNodes());            //!< reference to global nodal coordinates

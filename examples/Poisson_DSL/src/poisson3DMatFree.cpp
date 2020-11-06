@@ -117,7 +117,7 @@ void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bo
                          std::tuple(ReadWrite(Node(rhs))),
                          [&](auto const& cell, const auto& iter, auto& lvs)
     {
-        auto& rhs        = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        auto& rhs        = std::get<0>(lvs);
         auto jacobianMat = cell.GetGeometry().GetJacobian();
         double detJac    = jacobianMat.Determinant(); detJac = std::abs(detJac);
 
