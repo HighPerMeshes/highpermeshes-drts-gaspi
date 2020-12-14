@@ -55,18 +55,18 @@ void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bo
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT, typename MatrixT>
 void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer, MatrixT & massTerms, const float & sigma);
 
-template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
-void AssembleMatrixVecProductPerVector(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
+//template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
+//void AssembleMatrixVecProductPerVector(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
 
-template<typename NodeT, typename MeshT, typename BufferT>
-void AssembleRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, BufferT & rowGSM);
+//template<typename NodeT, typename MeshT, typename BufferT>
+//void AssembleRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, BufferT & rowGSM);
 
 template<typename MeshT, typename LoopbodyT, typename BufferT, typename MatrixT, typename VecDslT>
 auto CGSolver(const MeshT & mesh, LoopbodyT bodyObj, const BufferT & rhs, MatrixT & massTerms, const float & sigma,
               VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT;
 
-template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecT>
-void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT & x, const int & numSolverIt, const float & tol);
+//template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecT>
+//void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT & x, const int & numSolverIt, const float & tol);
 
 template<typename MatrixT> void GetMassTerms(MatrixT & matrix);
 
@@ -98,10 +98,10 @@ int main(int argc, char** argv)
     CGSolver(mesh, body, rhs, massTerms, sigma, x2, 10, 0.00001);
     outputVec(x2, "resultVec CGSolver", numNodes /*8*/);
 
-    /*------------------------------------------(3b) Solve: CGSolver2 -----------------------------------------------------------------------------------------*/
-    Vector x1 {0,0,0,0,0,0,0,0}; // set start vector
-    CGSolver2(mesh, rhs, body, x1, 10, 0.00001);
-    outputVec(x1, "resultVec cgSolver2", numNodes);
+//    /*------------------------------------------(3b) Solve: CGSolver2 -----------------------------------------------------------------------------------------*/
+//    Vector x1 {0,0,0,0,0,0,0,0}; // set start vector
+//    CGSolver2(mesh, rhs, body, x1, 10, 0.00001);
+//    outputVec(x1, "resultVec cgSolver2", numNodes);
 
     return 0;
 }
@@ -202,72 +202,72 @@ void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT b
     return;
 }
 
-//!
-//! matrix-vector product split into single vector products
-//!
-template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
-void AssembleMatrixVecProductPerVector(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer)
-{
-    auto nodes { mesh.template GetEntityRange<0>() };
+////!
+////! matrix-vector product split into single vector products
+////!
+//template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
+//void AssembleMatrixVecProductPerVector(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer)
+//{
+//    auto nodes { mesh.template GetEntityRange<0>() };
 
-    bodyObj.Execute(HPM::ForEachEntity(
-                  nodes,
-                  std::tuple(ReadWrite(Node(sBuffer))),
-                  [&](auto const& node, const auto& iter, auto& lvs)
-    {
-        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rowGSM(mesh);
-        int nodeID = node.GetTopology().GetIndex(); // global index of node
-        AssembleRowOfStiffnessMatrix(node, mesh, rowGSM);
+//    bodyObj.Execute(HPM::ForEachEntity(
+//                  nodes,
+//                  std::tuple(ReadWrite(Node(sBuffer))),
+//                  [&](auto const& node, const auto& iter, auto& lvs)
+//    {
+//        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rowGSM(mesh);
+//        int nodeID = node.GetTopology().GetIndex(); // global index of node
+//        AssembleRowOfStiffnessMatrix(node, mesh, rowGSM);
 
-        for (int i = 0; i < sBuffer.GetSize(); ++i)
-            sBuffer[nodeID] += rowGSM[i]*d[i];
-    }));
+//        for (int i = 0; i < sBuffer.GetSize(); ++i)
+//            sBuffer[nodeID] += rowGSM[i]*d[i];
+//    }));
 
-    return;
-}
+//    return;
+//}
 
-//!
-//! assemble local rows of stiffness matrix for function AssembleMatrixVecProductPerVector()
-//!
-template<typename NodeT, typename MeshT, typename BufferT>
-void AssembleRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, BufferT & rowGSM)
-{
-    int nodeID                   = node.GetTopology().GetIndex(); // global index of node
-    const auto& containing_cells = node.GetTopology().GetAllContainingCells();
+////!
+////! assemble local rows of stiffness matrix for function AssembleMatrixVecProductPerVector()
+////!
+//template<typename NodeT, typename MeshT, typename BufferT>
+//void AssembleRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, BufferT & rowGSM)
+//{
+//    int nodeID                   = node.GetTopology().GetIndex(); // global index of node
+//    const auto& containing_cells = node.GetTopology().GetAllContainingCells();
 
-    for (const auto& cell : containing_cells)
-    {
-        const int nrows = dim+1;
-        const auto& gradients = GetGradientsDSL();
-        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+//    for (const auto& cell : containing_cells)
+//    {
+//        const int nrows = dim+1;
+//        const auto& gradients = GetGradientsDSL();
+//        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
 
-        // To-Do: find better syntax
-        int localPositionOfNode;
-        for (int i = 0; i < dim+1; ++i)
-            if (nodeIdSet[i] == nodeID)
-                localPositionOfNode = i;
+//        // To-Do: find better syntax
+//        int localPositionOfNode;
+//        for (int i = 0; i < dim+1; ++i)
+//            if (nodeIdSet[i] == nodeID)
+//                localPositionOfNode = i;
 
-        auto tmp   = cell.GetGeometry().GetJacobian();
-        float detJ = tmp.Determinant(); detJ = std::abs(detJ);
-        auto inv   = tmp.Invert();
-        auto invJT = inv.Transpose();
+//        auto tmp   = cell.GetGeometry().GetJacobian();
+//        float detJ = tmp.Determinant(); detJ = std::abs(detJ);
+//        auto inv   = tmp.Invert();
+//        auto invJT = inv.Transpose();
 
-        // sigma random scalar value
-        float sigma = 1;
-        auto gc     = invJT * gradients[localPositionOfNode] * sigma * (detJ/6);
-        for (int row = 0; row < nrows; ++row)
-        {
-            auto gr                 = invJT * gradients[row];
-            rowGSM[nodeIdSet[row]] += gc*gr;
-            if (row == localPositionOfNode)
-                rowGSM[nodeIdSet[row]] += detJ/60;
-            else
-                rowGSM[nodeIdSet[row]] += detJ/120;
-        }
-    }
+//        // sigma random scalar value
+//        float sigma = 1;
+//        auto gc     = invJT * gradients[localPositionOfNode] * sigma * (detJ/6);
+//        for (int row = 0; row < nrows; ++row)
+//        {
+//            auto gr                 = invJT * gradients[row];
+//            rowGSM[nodeIdSet[row]] += gc*gr;
+//            if (row == localPositionOfNode)
+//                rowGSM[nodeIdSet[row]] += detJ/60;
+//            else
+//                rowGSM[nodeIdSet[row]] += detJ/120;
+//        }
+//    }
 
-    return;
-}
+//    return;
+//}
 
 //!
 //! conjugated gradient method without matrix vector operations
@@ -304,36 +304,36 @@ auto CGSolver(const MeshT & mesh, LoopbodyT bodyObj, const BufferT & rhs, Matrix
     return x;
 }
 
-//!
-//! conjugated gradient method
-//!
-template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecT>
-void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT & x, const int & numSolverIt, const float & tol)
-{
-    float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
-    Vector r = Convert2(rhs); // set residuum (rhs-A*x = rhs-0 = rhs)
-    Vector d = r;            // search direction
+////!
+////! conjugated gradient method
+////!
+//template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecT>
+//void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT & x, const int & numSolverIt, const float & tol)
+//{
+//    float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
+//    Vector r = Convert2(rhs); // set residuum (rhs-A*x = rhs-0 = rhs)
+//    Vector d = r;            // search direction
 
-    for (int it = 0; it < numSolverIt; ++it)
-    {
-        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> sBuffer(mesh);
-        AssembleMatrixVecProductPerVector(mesh, d, bodyObj, sBuffer);
-        //if (it == 0) {outputVec(sBuffer,  "Buffer s ofMatVecAssemblPerVec", 8);outputVec(d, "Buffer d ofMatVecAssemblPerVec", 8);}
-        Vector s = Convert2(sBuffer);
-        r_scPr   = scPr(r,r); // <r,r> (scalar product)
-        a        = r_scPr/scPr(d,s);
-        x        = plus(x, msv(a, d));
-        r        = minus(r, msv(a,s)); // r - a*s
-        b        = scPr(r,r)/r_scPr; // (rNew*rNew)/(rOld*rOld)
-        d        = plus(r,msv(b,d)); // r + b*d
+//    for (int it = 0; it < numSolverIt; ++it)
+//    {
+//        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> sBuffer(mesh);
+//        AssembleMatrixVecProductPerVector(mesh, d, bodyObj, sBuffer);
+//        //if (it == 0) {outputVec(sBuffer,  "Buffer s ofMatVecAssemblPerVec", 8);outputVec(d, "Buffer d ofMatVecAssemblPerVec", 8);}
+//        Vector s = Convert2(sBuffer);
+//        r_scPr   = scPr(r,r); // <r,r> (scalar product)
+//        a        = r_scPr/scPr(d,s);
+//        x        = plus(x, msv(a, d));
+//        r        = minus(r, msv(a,s)); // r - a*s
+//        b        = scPr(r,r)/r_scPr; // (rNew*rNew)/(rOld*rOld)
+//        d        = plus(r,msv(b,d)); // r + b*d
 
-        eps = std::sqrt(scPr(r, r)); // sqrt(rNew*rNew)
-        if (eps < tol)
-            it = numSolverIt;
-    }
+//        eps = std::sqrt(scPr(r, r)); // sqrt(rNew*rNew)
+//        if (eps < tol)
+//            it = numSolverIt;
+//    }
 
-    return;
-}
+//    return;
+//}
 
 
 
