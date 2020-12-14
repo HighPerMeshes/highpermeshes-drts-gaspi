@@ -38,7 +38,6 @@ class DEBUG;
 using namespace HPM;
 using namespace ::HPM::auxiliary;
 using namespace std;
-//using namespace ::HPM::dataType;
 template <std::size_t ...I>
 using Dofs           = HPM::dataType::Dofs<I...>;
 using CoordinateT    = HPM::dataType::Vec<float,3>;
