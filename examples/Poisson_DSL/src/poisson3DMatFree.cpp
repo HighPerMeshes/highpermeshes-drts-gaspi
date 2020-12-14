@@ -52,8 +52,8 @@ constexpr int dim    = Mesh::CellDimension;
 template<typename MeshT, typename BufferT, typename ItLoopBodyObjT>
 void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bodyObj);
 
-template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
-void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT, typename MatrixT>
+void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer, MatrixT & massTerms, const float & sigma);
 
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
 void AssembleMatrixVecProductPerVector(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer);
@@ -61,11 +61,14 @@ void AssembleMatrixVecProductPerVector(const MeshT & mesh, const VectorT & d, Lo
 template<typename NodeT, typename MeshT, typename BufferT>
 void AssembleRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, BufferT & rowGSM);
 
-template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecDslT>
-auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT;
+template<typename MeshT, typename LoopbodyT, typename BufferT, typename MatrixT, typename VecDslT>
+auto CGSolver(const MeshT & mesh, LoopbodyT bodyObj, const BufferT & rhs, MatrixT & massTerms, const float & sigma,
+              VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT;
 
 template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecT>
 void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT & x, const int & numSolverIt, const float & tol);
+
+template<typename MatrixT> void GetMassTerms(MatrixT & matrix);
 
 /*----------------------------------------------------------------- MAIN --------------------------------------------------------------------------------------*/
 int main(int argc, char** argv)
@@ -79,22 +82,26 @@ int main(int argc, char** argv)
 
     int const numNodes = 8;//mesh.template GetNumEntities<0>;
 
-    /*------------------------------------------(2) Set right hand side: --------------------------------------------------------------------------------------*/
+    /*------------------------------------------(2) Set right hand side and mass terms: -----------------------------------------------------------------------*/
     HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> rhs(mesh);
-    SetRHS(mesh, rhs, false, body);
+    SetRHS(mesh, rhs, true, body);
+
+    // store mass information beforehand
+    ::HPM::dataType::Matrix<float, dim+1, dim+1> massTerms;
+    GetMassTerms(massTerms);
 
     /*------------------------------------------(3a) Solve: CGSolver ------------------------------------------------------------------------------------------*/
     HPM::dataType::Vec<float, numNodes> x2;
     for (int i = 0; i < numNodes; ++i) {x2[i]=0;} // set start vector
 
-    CGSolver(mesh, rhs, body, x2, 10, 0.00001);
+    float sigma = 1; // here: random scalar value without 0
+    CGSolver(mesh, body, rhs, massTerms, sigma, x2, 10, 0.00001);
     outputVec(x2, "resultVec CGSolver", numNodes /*8*/);
 
     /*------------------------------------------(3b) Solve: CGSolver2 -----------------------------------------------------------------------------------------*/
     Vector x1 {0,0,0,0,0,0,0,0}; // set start vector
     CGSolver2(mesh, rhs, body, x1, 10, 0.00001);
-    outputVec(x1, "resultVec cgSolver", numNodes);
-
+    outputVec(x1, "resultVec cgSolver2", numNodes);
 
     return 0;
 }
@@ -110,21 +117,22 @@ int main(int argc, char** argv)
 template<typename MeshT, typename BufferT, typename ItLoopBodyObjT>
 void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bodyObj)
 {
-    auto cells { mesh.template GetEntityRange<3>() };
+    auto nodes { mesh.template GetEntityRange<0>() };
 
     bodyObj.Execute(HPM::ForEachEntity(
-                         cells,
+                         nodes,
                          std::tuple(ReadWrite(Node(rhs))),
-                         [&](auto const& cell, const auto& iter, auto& lvs)
+                         [&](auto const& vertex, const auto& iter, auto& lvs)
     {
-        auto& rhs        = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        auto jacobianMat = cell.GetGeometry().GetJacobian();
-        double detJac    = jacobianMat.Determinant(); detJac = std::abs(detJac);
+        auto& rhs         = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        const auto &cells = vertex.GetTopology().GetAllContainingCells();
 
-        for (const auto& node : cell.GetTopology().template GetEntities<0>())
+        for (const auto &cell : cells)
         {
-            int id      = node.GetTopology().GetLocalIndex();
-            rhs[id][0] += detJac/24;
+            auto jacobianMat = cell.GetGeometry().GetJacobian();
+            double detJac    = jacobianMat.Determinant();
+            detJac           = std::abs(detJac);
+            rhs[0]          += detJac/24;
         }
     }));
 
@@ -134,67 +142,61 @@ void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bo
     return;
 }
 
+template<typename MatrixT>
+void GetMassTerms(MatrixT & matrix)
+{
+    for (int col = 0; col < dim+1; ++col)
+    {
+        for (int row = 0; row < dim+1; ++row)
+        {
+            matrix[row][col] = (col == row ? 1 / 60.0 : 1 / 120.0);
+        }
+    }
+    return;
+}
+
+
 //!
 //! matrix-vector product split into single scalar operations
 //!
-template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT>
-void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer)
+template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT, typename MatrixT>
+void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer, MatrixT & massTerms, const float & sigma)
 {
-    auto cells { mesh.template GetEntityRange<3>() };
+    auto nodes { mesh.template GetEntityRange<0>() };
     bodyObj.Execute(HPM::ForEachEntity(
-                  cells,
+                  nodes,
                   std::tuple(ReadWrite(Node(sBuffer))),
-                  [&](auto const& cell, const auto& iter, auto& lvs)
+                  [&](auto const& node, const auto& iter, auto& lvs)
     {
         constexpr int nrows = dim+1;
         constexpr int ncols = dim+1;
         const auto& gradients = GetGradientsDSL();
-        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+        auto& sBuffer         = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+        const auto & cells    = node.GetTopology().GetAllContainingCells();
 
-        const auto& tmp  = cell.GetGeometry().GetJacobian();
-        const float detJ = std::abs(tmp.Determinant());
-
-        // store detJ information beforehand
-        const auto _detJ = [&]() {
-                ::HPM::dataType::Matrix<float, nrows, ncols> matrix;
-                for (int col = 0; col < ncols; ++col)
-                {
-                    for (int row = 0; row < nrows; ++row)
-                    {
-                        matrix[row][col] = (col == row ? detJ / 60.0 : detJ / 120.0);
-                    }
-                }
-                return matrix;
-            }();
-
-        const auto& inv   = tmp.Invert();
-        const auto& invJT = inv.Transpose();
-
-        // sigma: random scalar value
-        float sigma = 2;
-
-        // separate GATHER
-        std::array<float, nrows> _d;
-        for (int row = 0; row < nrows; ++row)
-            _d[row] = d[nodeIdSet[row]];
-
-        // accumulate into contiguous block of memory
-        std::array<float, ncols> result{};
-
-        for (int col = 0; col < ncols; ++col)
+        for (const auto &cell : cells)
         {
-            const auto& gc = invJT * gradients[col] * sigma * (detJ/6);
+            const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+            int locID = -1;
+            for (int i = 0; i < dim+1; ++i) {if (node.GetTopology().GetIndex() == nodeIdSet[i]) locID = i;}
+
+            const auto& J     = cell.GetGeometry().GetJacobian();
+            const float detJ  = std::abs(J.Determinant());
+            const auto& invJ  = J.Invert();
+            const auto& invJT = invJ.Transpose();
+
+            // separate GATHER
+            std::array<float, nrows> _d;
+            for (int row = 0; row < nrows; ++row)
+                _d[row] = d[nodeIdSet[row]];
+
+            const auto& gc = invJT * gradients[locID] * sigma * (detJ/6);
             for (int row = 0; row < nrows; ++row)
             {
-                float val      = _detJ[row][col];
                 const auto& gr = invJT * gradients[row];
-                result[col]   += ((gc*gr) * val) * _d[row];
+                sBuffer[0] += ((gc*gr) + (detJ * massTerms[row][locID])) * _d[row];
             }
         }
-
-        // separate SCATTER (accumulate)
-        for (int col = 0; col < ncols; ++col)
-            sBuffer[nodeIdSet[col]] += result[col];
     }));
 
     return;
@@ -270,8 +272,9 @@ void AssembleRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, BufferT 
 //!
 //! conjugated gradient method without matrix vector operations
 //!
-template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecDslT>
-auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT
+template<typename MeshT, typename LoopbodyT, typename BufferT, typename MatrixT, typename VecDslT>
+auto CGSolver(const MeshT & mesh, LoopbodyT bodyObj, const BufferT & rhs, MatrixT & massTerms, const float & sigma,
+              VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT
 {
     int const size = 8;//x.size();
     using VecDSL = HPM::dataType::Vec<float,size>;
@@ -283,7 +286,8 @@ auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDsl
     for (int it = 0; it < numSolverIt; ++it)
     {
         HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> sBuffer(mesh);
-        AssembleMatrixVecProduct(mesh, d, bodyObj, sBuffer);
+        AssembleMatrixVecProduct(mesh, d, bodyObj, sBuffer, massTerms, sigma);
+        //if (it == 0) {outputVec(sBuffer, "Buffer s ofMatVecAssembl", 8);outputVec(d, "Buffer d ofMatVecAssembl", 8);}
         VecDSL s; Convert(sBuffer, s);
         r_scPr = r * r; // <r,r> scalar product
         a      = r_scPr/(d*s);
@@ -314,7 +318,7 @@ void CGSolver2(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecT 
     {
         HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> sBuffer(mesh);
         AssembleMatrixVecProductPerVector(mesh, d, bodyObj, sBuffer);
-
+        //if (it == 0) {outputVec(sBuffer,  "Buffer s ofMatVecAssemblPerVec", 8);outputVec(d, "Buffer d ofMatVecAssemblPerVec", 8);}
         Vector s = Convert2(sBuffer);
         r_scPr   = scPr(r,r); // <r,r> (scalar product)
         a        = r_scPr/scPr(d,s);
