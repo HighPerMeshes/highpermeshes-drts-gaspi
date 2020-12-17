@@ -273,37 +273,6 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
     return;
 }
 
-////!
-////! \brief Assemble rom-sum lumped mass matrix
-////!
-//template<typename MeshT, typename DispatcherT, typename BufferT>
-//void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat)
-//{
-//    auto cells {mesh.template GetEntityRange<2>()};
-//    dispatcher.Execute(ForEachEntity(
-//                           cells,
-//                           tuple(ReadWrite(Node(lumpedMat))),
-//                           [&](auto const& cell, const auto& iter, auto& lvs)
-//    {
-//        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-//        auto tmp        = cell.GetGeometry().GetJacobian();
-//        float detJ      = abs(tmp.Determinant());
-
-//        for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
-//        {
-//            int id_node1 = node1.GetTopology().GetLocalIndex();
-//            for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
-//            {
-//                if (node2.GetTopology().GetLocalIndex() == id_node1)
-//                    lumpedMat[id_node1][0] += detJ * 1/12;
-//                else
-//                    lumpedMat[id_node1][0] += detJ * 1/24;
-//            }
-//        }
-//    }));
-//    return;
-//}
-
 //!
 //! \brief Assemble rom-sum lumped mass matrix
 //!
