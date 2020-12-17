@@ -72,17 +72,17 @@ template<typename MeshT, typename BufferT, typename DispatcherT>
 void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight,
                        const int & maxX, const int & maxY, DispatcherT & dispatcher);
 
+template<typename T, typename VectorT>
+void GatherVec(const T & gatherVec, VectorT & resultVec, const int & numNodes);
+
 template<typename MeshT, typename DispatcherT, typename BufferT>
 void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat) ;
 
 template<typename MeshT, typename VectorT, typename DispatcherT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, DispatcherT & dispatcher, BufferT & sBuffer);
 
-//template<typename BufferT, typename VectorT, typename DispatcherT, typename MeshT>
-//void FWEuler(BufferT & vecOld, const VectorT & vecDeriv, const float & h, DispatcherT & dispatcher, const MeshT & mesh, const bool & optionWrite);
-
-template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT/*, typename OfstreamT*/>
-void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, /*const*/ BufferT & vecDeriv, const float & h,
+template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT>
+void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, BufferT & vecDeriv, const float & h,
              const bool & optionWrite, MutexT & mutex, const stringstream & fstreamNumber);
 
 template<typename BufferT, typename MeshT, typename DispatcherT>
@@ -144,19 +144,20 @@ int main(int argc, char** argv)
     AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
 
     // check if startvector was set correctly by creating output file at time step zero
-    const auto u_gather0 = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
-    std::vector<float> u_total0(numNodes);
-    const std::size_t num_buffers0 = u_gather0.size ()/ numNodes;
-    for (std::size_t i = 0; i < numNodes; ++i)
-    {
-        u_total0[i] = 0;
-        for (std::size_t k = 0; k < num_buffers0; ++k)
-            u_total0[i] += u_gather0[k * numNodes + i];
-    }
+    const auto u0_gather = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
+    std::vector<float> u0_total(numNodes);
+    GatherVec(u0_gather, u0_total, numNodes);
+
+//    for (std::size_t i = 0; i < numNodes; ++i)
+//    {
+//        u_total0[i] = 0;
+//        for (std::size_t k = 0; k < num_buffers0; ++k)
+//            u_total0[i] += u_gather0[k * numNodes + i];
+//    }
 
     stringstream s; s << 0;
     string name = filename + s.str();
-    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, /*u*/u_total0, "resultU");
+    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, /*u*/u0_total, "resultU");
 
     mutex mtx;
 
@@ -181,13 +182,14 @@ int main(int argc, char** argv)
 
             const auto u_gather = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
             std::vector<float> u_total(numNodes);
-            const std::size_t num_buffers = u_gather.size ()/ numNodes;
-            for (std::size_t i = 0; i < numNodes; ++i)
-            {
-                u_total[i] = 0;
-                for (std::size_t k = 0; k < num_buffers; ++k)
-                    u_total[i] += u_gather[k * numNodes + i];
-            }
+            GatherVec(u_gather, u_total, numNodes);
+//            const std::size_t num_buffers = u_gather.size ()/ numNodes;
+//            for (std::size_t i = 0; i < numNodes; ++i)
+//            {
+//                u_total[i] = 0;
+//                for (std::size_t k = 0; k < num_buffers; ++k)
+//                    u_total[i] += u_gather[k * numNodes + i];
+//            }
 
             if ((j+1)%10 == 0)
             {
@@ -341,59 +343,33 @@ void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, Dispatche
 //!
 //! \brief Forward (explicit) Euler algorithm.
 //!
-template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT/*, typename OfstreamT*/>
-void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, /*const*/ BufferT & vecDeriv, const float & h,
+template<typename BufferT, typename DispatcherT, typename MeshT, typename MutexT>
+void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, BufferT & vecDeriv, const float & h,
              const bool & optionWrite, MutexT & mutex, const stringstream & fstreamNumber)
 {
-    auto vertices {mesh.template GetEntityRange<0>()};
+    auto nodes {mesh.template GetEntityRange<0>()};
 
     if (optionWrite)
     {
-        string distFileName = "testDist" + fstreamNumber.str() + ".txt";
+        string distFileName = "WriteLoop" + fstreamNumber.str() + ".txt";
         ofstream fstream {distFileName};
-        dispatcher.Execute(
-                    ForEachEntity(
-                        vertices,
-                        tuple(ReadWrite(Node(vecOld)), ReadWrite(Node(vecDeriv))),
-                        [&](auto const& vertex, const auto& iter, auto& lvs) {
-            auto& vecOld   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-            auto& vecDeriv = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<1>(lvs));
+        dispatcher.Execute(ForEachEntity(nodes,
+                                         tuple(ReadWrite(Node(vecOld)), Read(Node(vecDeriv))),
+                                         [&](auto const& node, const auto& iter, auto& lvs)
+        {
+            auto& vecOld   = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
+            auto& vecDeriv = dof::GetDofs<dof::Name::Node>(get<1>(lvs));
             vecOld[0] += h*vecDeriv[0];
         }),
-            WriteLoop(mutex, fstream, vertices, vecOld)
+            WriteLoop(mutex, fstream, nodes, vecOld)
       );
         fstream.close();
-
-//        dispatcher.Execute(
-//                    ForEachEntity(
-//                        vertices,
-//                        tuple(ReadWrite(Node(vecOld)), ReadWrite(Node(vecDeriv))),
-//                        [&](auto const& vertex, const auto& iter, auto& lvs) {
-//            auto& vecOld   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-//            auto& vecDeriv = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<1>(lvs));
-//            vecOld[0] += h*vecDeriv[0];
-//        }));
-
-//        string distFileName = "testMD2D_proc2_" + fstreamNumber.str() + ".txt";
-//        ofstream fstream {distFileName};
-//        dispatcher.Execute(
-//                    ForEachEntity(
-//                        vertices,
-//                        tuple(ReadWrite(Node(vecOld)), ReadWrite(Node(vecDeriv))),
-//                        [&](auto const& vertex, const auto& iter, auto& lvs) {
-//            auto& vecOld   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-//        }),
-//            WriteLoop(mutex, fstream, vertices, vecOld)
-//        );
-
-//        fstream.close();
     }
     else {
-        dispatcher.Execute(
-                    ForEachEntity(
-                        vertices,
-                        tuple(ReadWrite(Node(vecOld)), Read(Node(vecDeriv))),
-                        [&](auto const& vertex, const auto& iter, auto& lvs) {
+        dispatcher.Execute(ForEachEntity(nodes,
+                                         tuple(Write(Node(vecOld)), Read(Node(vecDeriv))),
+                                         [&](auto const& node, const auto& iter, auto& lvs)
+        {
             auto& vecOld   = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
             auto& vecDeriv = dof::GetDofs<dof::Name::Node>(get<1>(lvs));
             vecOld[0]     += h*vecDeriv[0];
@@ -431,8 +407,6 @@ void computeIionUDerivWDeriv(const MeshT & mesh, DispatcherT & dispatcher, Buffe
         f[0]       = (u[0] * (1-u[0]) * (u[0]-a)) - w[0];
         u_deriv[0] = ((1/lumpedM[0]) * sigma * s[0]) + f[0];
         w_deriv[0] = eps*(u[0]-(b*w[0]));
-
-        //s[0] = w[0];
 
     }));
     return;
@@ -517,4 +491,16 @@ void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx)
 
     fclose(f);
     return;
+}
+
+template<typename T, typename VectorT>
+void GatherVec(const T & gatherVec, VectorT & resultVec, const int & numNodes)
+{
+    const size_t numBuffers = gatherVec.size()/numNodes;
+    for (size_t i = 0; i < numNodes; ++i)
+    {
+        resultVec[i] = 0;
+        for (size_t k = 0; k < numBuffers; ++k)
+            resultVec[i] += gatherVec[k * numNodes + i];
+    }
 }
