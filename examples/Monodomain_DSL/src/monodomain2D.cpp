@@ -143,6 +143,9 @@ int main(int argc, char** argv)
     Buffer</*float*/double, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
 
+    outputVec(lumpedMat, "lumpedMat", numNodes);
+    return 0;
+
     // check if startvector was set correctly by creating output file at time step zero
     const auto u_gather0 = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
     std::vector<float> u_total0(numNodes);
@@ -270,32 +273,56 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
     return;
 }
 
+////!
+////! \brief Assemble rom-sum lumped mass matrix
+////!
+//template<typename MeshT, typename DispatcherT, typename BufferT>
+//void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat)
+//{
+//    auto cells {mesh.template GetEntityRange<2>()};
+//    dispatcher.Execute(ForEachEntity(
+//                           cells,
+//                           tuple(ReadWrite(Node(lumpedMat))),
+//                           [&](auto const& cell, const auto& iter, auto& lvs)
+//    {
+//        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
+//        auto tmp        = cell.GetGeometry().GetJacobian();
+//        float detJ      = abs(tmp.Determinant());
+
+//        for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
+//        {
+//            int id_node1 = node1.GetTopology().GetLocalIndex();
+//            for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
+//            {
+//                if (node2.GetTopology().GetLocalIndex() == id_node1)
+//                    lumpedMat[id_node1][0] += detJ * 1/12;
+//                else
+//                    lumpedMat[id_node1][0] += detJ * 1/24;
+//            }
+//        }
+//    }));
+//    return;
+//}
+
 //!
 //! \brief Assemble rom-sum lumped mass matrix
 //!
 template<typename MeshT, typename DispatcherT, typename BufferT>
 void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat)
 {
-    auto cells {mesh.template GetEntityRange<2>()};
-    dispatcher.Execute(ForEachEntity(
-                           cells,
-                           tuple(ReadWrite(Node(lumpedMat))),
-                           [&](auto const& cell, const auto& iter, auto& lvs)
+    auto nodes {mesh.template GetEntityRange<0>()};
+    dispatcher.Execute(ForEachEntity(nodes,
+                                     tuple(ReadWrite(Node(lumpedMat))),
+                                     [&](auto const& node, const auto& iter, auto& lvs)
     {
-        auto& lumpedMat = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        auto tmp        = cell.GetGeometry().GetJacobian();
-        float detJ      = abs(tmp.Determinant());
+        auto& lumpedMat = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
+        const auto& cells = node.GetTopology().GetAllContainingCells();
 
-        for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
+        for (const auto& cell : cells)
         {
-            int id_node1 = node1.GetTopology().GetLocalIndex();
-            for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
-            {
-                if (node2.GetTopology().GetLocalIndex() == id_node1)
-                    lumpedMat[id_node1][0] += detJ * 1/12;
-                else
-                    lumpedMat[id_node1][0] += detJ * 1/24;
-            }
+            auto J            = cell.GetGeometry().GetJacobian();
+            const float detJ  = abs(J.Determinant());
+            lumpedMat[0]     += detJ/6; //detJ*1/12 + detJ*1/24 + detJ*1/24
         }
     }));
     return;
