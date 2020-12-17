@@ -115,7 +115,7 @@ int main(int argc, char** argv)
     string currentWorkingDir(buff);
 
     string foldername = "testOption2AsCandidate0";//"test3DOptFor2DCase";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
-    string filename   = "testOption2AsCandidate1_";//"test3DOptFor2DCase100x100SmallTau_";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
+    string filename   = "testOption2AsCandidate2_";//"test3DOptFor2DCase100x100SmallTau_";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
     //string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
@@ -142,9 +142,6 @@ int main(int argc, char** argv)
     /*------------------------------------------(4) Create monodomain problem ---------------------------------------------------------------------------------*/
     Buffer</*float*/double, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
-
-    outputVec(lumpedMat, "lumpedMat", numNodes);
-    return 0;
 
     // check if startvector was set correctly by creating output file at time step zero
     const auto u_gather0 = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
@@ -300,54 +297,98 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, Buff
 //!
 //! matrix-vector product split into single scalar operations
 //!
+//template<typename MeshT, typename VectorT, typename DispatcherT, typename BufferT>
+//void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, DispatcherT & dispatcher, BufferT & sBuffer)
+//{
+//    auto cells { mesh.template GetEntityRange<dim>() };
+//    dispatcher.Execute(ForEachEntity(
+//                           cells,
+//                           tuple(Write(Node(sBuffer))),
+//                           [&](auto const& cell, const auto& iter, auto& lvs)
+//    {
+//        auto& sBuffer = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
+
+//        constexpr int nrows = dim+1;
+//        constexpr int ncols = dim+1;
+
+//        const auto& gradients = GetGradients2DP1();
+//        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+
+//        const auto& tmp  = cell.GetGeometry().GetJacobian();
+//        const float detJ = abs(tmp.Determinant());
+
+//        const auto& inv   = tmp.Invert();
+//        const auto& invJT = inv.Transpose();
+
+//        // separate GATHER
+//        array<float, nrows> _d;
+//        for (int row = 0; row < nrows; ++row)
+//            _d[row] = d[nodeIdSet[row]];
+
+//        // accumulate into contiguous block of memory
+//        array<float, ncols> result{};
+
+//        float val      = detJ * 0.5;
+//        for (int col = 0; col < ncols; ++col)
+//        {
+//            const auto& gc = invJT * gradients[col];
+//            for (int row = 0; row < nrows; ++row)
+//            {
+//                const auto& gr = invJT * gradients[row];
+//                result[col]   += ((gc*gr) * val) * _d[row];
+//            }
+//        }
+
+//        // separate SCATTER (accumulate)
+//        for (int col = 0; col < ncols; ++col){
+//            sBuffer[col][0] += result[col];//sBuffer[nodeIdSet[col]][0] += result[col];
+//        }
+
+
+//    }));
+
+//    return;
+//}
+
+//!
+//! matrix-vector product split into single scalar operations
+//!
 template<typename MeshT, typename VectorT, typename DispatcherT, typename BufferT>
 void AssembleMatrixVecProduct2D(const MeshT & mesh, const VectorT & d, DispatcherT & dispatcher, BufferT & sBuffer)
 {
-    auto cells { mesh.template GetEntityRange<dim>() };
-    dispatcher.Execute(ForEachEntity(
-                           cells,
-                           tuple(Write(Node(sBuffer))),
-                           [&](auto const& cell, const auto& iter, auto& lvs)
+    auto nodes {mesh.template GetEntityRange<0>()};
+    dispatcher.Execute(ForEachEntity(nodes,
+                                     tuple(Write(Node(sBuffer))),
+                                     [&](auto const& node, const auto& iter, auto& lvs)
     {
         auto& sBuffer = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
-
         constexpr int nrows = dim+1;
-        constexpr int ncols = dim+1;
-
         const auto& gradients = GetGradients2DP1();
-        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+        const auto & cells = node.GetTopology().GetAllContainingCells();
 
-        const auto& tmp  = cell.GetGeometry().GetJacobian();
-        const float detJ = abs(tmp.Determinant());
-
-        const auto& inv   = tmp.Invert();
-        const auto& invJT = inv.Transpose();
-
-        // separate GATHER
-        array<float, nrows> _d;
-        for (int row = 0; row < nrows; ++row)
-            _d[row] = d[nodeIdSet[row]];
-
-        // accumulate into contiguous block of memory
-        array<float, ncols> result{};
-
-        float val      = detJ * 0.5;
-        for (int col = 0; col < ncols; ++col)
+        for (const auto& cell : cells)
         {
-            const auto& gc = invJT * gradients[col];
+            const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
+            int locID = -1;
+            for (int i = 0; i < dim+1; ++i) {if (node.GetTopology().GetIndex() == nodeIdSet[i]) locID = i;}
+
+            const auto& J     = cell.GetGeometry().GetJacobian();
+            const float detJ  = abs(J.Determinant());
+            const auto& invJ  = J.Invert();
+            const auto& invJT = invJ.Transpose();
+
+            // separate GATHER
+            array<float, nrows> _d;
+            for (int row = 0; row < nrows; ++row)
+                _d[row] = d[nodeIdSet[row]];
+
+            const auto& gc = invJT * gradients[locID] * (detJ/2);
             for (int row = 0; row < nrows; ++row)
             {
                 const auto& gr = invJT * gradients[row];
-                result[col]   += ((gc*gr) * val) * _d[row];
+                sBuffer[0]   += ((gc*gr)) * _d[row];
             }
         }
-
-        // separate SCATTER (accumulate)
-        for (int col = 0; col < ncols; ++col){
-            sBuffer[col][0] += result[col];//sBuffer[nodeIdSet[col]][0] += result[col];
-        }
-
-
     }));
 
     return;
