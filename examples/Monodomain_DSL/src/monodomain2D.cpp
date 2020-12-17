@@ -18,7 +18,7 @@
  *                  u(0) = 1  on \Omega_1 and u(0) = 0  on \Omega_2,               *
  *                  w(0) = 0  on \Omega_1 and w(0) = 1  on \Omega_2.               *
  *                                                                                 *
- * last change: 10.07.2020                                                         *
+ * last change: 17.12.2020                                                         *
  * ------------------------------------------------------------------------------ **/
 
 #ifndef MONODOMAIN_CPP
@@ -245,24 +245,26 @@ int main(int argc, char** argv)
 
 /*----------------------------------------------------------------- (A) Functions (Implementation): -----------------------------------------------------------*/
 //!
-//! \brief Create start vector.
+//! \brief Create a start vector.
 //!
 template<typename MeshT, typename BufferT, typename DispatcherT>
-void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight, const int & maxX, const int & maxY, DispatcherT & dispatcher)
+void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & startValLeft, const float & startValRight,
+                       const int & maxX, const int & maxY, DispatcherT & dispatcher)
 {
-    auto vertices { mesh.template GetEntityRange<0>() };
+    auto nodes {mesh.template GetEntityRange<0>()};
 
     dispatcher.Execute(ForEachEntity(
-                           vertices,
+                           nodes,
                            tuple(Write(Node(startVec))),
                            [&](auto const& node, const auto& iter, auto& lvs)
     {
-        auto& startVec = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        auto coords = node.GetTopology().GetVertices();
+        auto& startVec = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
+        auto coords    = node.GetTopology().GetVertices();
+
         if ( (coords[0][0] < maxX) && (coords[0][1] < maxY) )
-            startVec[0] = startValLeft; //startVec[node.GetTopology().GetIndex()] = startValLeft;
+            startVec[0] = startValLeft;
         else
-            startVec[0] = startValRight; //startVec[node.GetTopology().GetIndex()] = startValRight;
+            startVec[0] = startValRight;
     }));
 
     return;
