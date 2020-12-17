@@ -103,7 +103,7 @@ int main(int argc, char** argv)
 template<typename MeshT, typename BufferT, typename ItLoopBodyObjT>
 void SetRHS(const MeshT & mesh, BufferT & rhs, bool optOutput, ItLoopBodyObjT bodyObj)
 {
-    auto nodes { mesh.template GetEntityRange<0>() };
+    auto nodes {mesh.template GetEntityRange<0>()};
 
     bodyObj.Execute(ForEachEntity(
                          nodes,
@@ -150,18 +150,17 @@ void GetMassTerms(MatrixT & matrix)
 template<typename MeshT, typename VectorT, typename LoopbodyT, typename BufferT, typename MatrixT>
 void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT bodyObj, BufferT & sBuffer, MatrixT & massTerms, const float & sigma)
 {
-    auto nodes { mesh.template GetEntityRange<0>() };
-    bodyObj.Execute(ForEachEntity(
-                  nodes,
-                  tuple(ReadWrite(Node(sBuffer))),
-                  [&](auto const& node, const auto& iter, auto& lvs)
+    auto nodes {mesh.template GetEntityRange<0>()};
+    bodyObj.Execute(ForEachEntity(nodes,
+                                  tuple(ReadWrite(Node(sBuffer))),
+                                  [&](auto const& node, const auto& iter, auto& lvs)
     {
-        constexpr int nrows = dim+1;
+        constexpr int nrows   = dim+1;
         const auto& gradients = GetGradientsDSL();
         auto& sBuffer         = dof::GetDofs<HPM::dof::Name::Node>(get<0>(lvs));
         const auto & cells    = node.GetTopology().GetAllContainingCells();
 
-        for (const auto &cell : cells)
+        for (const auto& cell : cells)
         {
             const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
             int locID = -1;
