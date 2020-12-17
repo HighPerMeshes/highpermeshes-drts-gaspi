@@ -52,6 +52,7 @@
 class DEBUG;
 using namespace HPM;
 using namespace ::HPM::auxiliary;
+
 using namespace std;
 
 template <size_t ...I>
@@ -99,7 +100,7 @@ int main(int argc, char** argv)
     bool optionAllGather = true;
     bool optionWriteLoop = false;
     bool optionWriteOut  = false;
-    bool optionMatrixVecProductTest = false;
+    //bool optionMatrixVecProductTest = false;
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
     drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
@@ -140,104 +141,58 @@ int main(int argc, char** argv)
     Buffer<double, Mesh, Dofs<1, 0, 0, 0>> StiffVecU(mesh);
 
     /*------------------------------------------(4) Create monodomain problem ---------------------------------------------------------------------------------*/
-    Buffer</*float*/double, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
+    Buffer<double, Mesh, Dofs<1, 0, 0, 0>> lumpedMat(mesh);
     AssembleLumpedMassMatrix(mesh, dispatcher, lumpedMat);
 
     // check if startvector was set correctly by creating output file at time step zero
-    const auto u0_gather = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
-    std::vector<float> u0_total(numNodes);
+    const auto u0_gather = AllGather<0>(u, static_cast<UsingGaspi&>(hpm));
+    vector<float> u0_total(numNodes);
     GatherVec(u0_gather, u0_total, numNodes);
-
-//    for (std::size_t i = 0; i < numNodes; ++i)
-//    {
-//        u_total0[i] = 0;
-//        for (std::size_t k = 0; k < num_buffers0; ++k)
-//            u_total0[i] += u_gather0[k * numNodes + i];
-//    }
-
     stringstream s; s << 0;
     string name = filename + s.str();
-    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, /*u*/u0_total, "resultU");
+    writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u0_total, "resultU");
 
     mutex mtx;
 
-    // compute u (and w)
+    // compute u and w
     for (int j = 0; j < numIt; ++j)
     {
         stringstream s; s << j+1;
-//        if((j+1)%10 == 0)
-//            optionWriteOut = true;
-//        else
-//            optionWriteOut = false;
 
         computeIionUDerivWDeriv(mesh, dispatcher, f, u_deriv, w_deriv, u, w, lumpedMat, StiffVecU, sigma, a, b, eps);
         FWEuler(mesh, dispatcher, u, u_deriv, h, optionWriteOut=false, mtx, s);
         FWEuler(mesh, dispatcher, w, w_deriv, h, false, mtx, s);
 
-
-        if (optionAllGather) // create output files using AllGather
+        if (optionAllGather) //create output files using AllGather
         {
-            //const std::size_t proc_id = hpm.gaspi_context.rank().get();
-            //cout << "Process id: " << proc_id << endl;
-
-            const auto u_gather = HPM::auxiliary::AllGather<0>(u, static_cast<::HPM::UsingGaspi&>(hpm));
-            std::vector<float> u_total(numNodes);
+            const auto u_gather = AllGather<0>(u, static_cast<UsingGaspi&>(hpm));
+            vector<float> u_total(numNodes);
             GatherVec(u_gather, u_total, numNodes);
-//            const std::size_t num_buffers = u_gather.size ()/ numNodes;
-//            for (std::size_t i = 0; i < numNodes; ++i)
-//            {
-//                u_total[i] = 0;
-//                for (std::size_t k = 0; k < num_buffers; ++k)
-//                    u_total[i] += u_gather[k * numNodes + i];
-//            }
 
             if ((j+1)%10 == 0)
             {
+                const size_t proc_id = hpm.gaspi_context.rank().get();
+                cout << "Process id: " << proc_id << endl;
+
                 name = filename + s.str();
                 writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u_total, "resultU");
             }
         }
-
-        if (optionMatrixVecProductTest) // create output files using AllGather
-        {
-            //const std::size_t proc_id = hpm.gaspi_context.rank().get();
-            //cout << "Process id: " << proc_id << endl;
-
-            const auto StiffVecU_gather = HPM::auxiliary::AllGather<0>(StiffVecU, static_cast<::HPM::UsingGaspi&>(hpm));
-            std::vector<float> StiffVecU_total(numNodes);
-            const std::size_t num_buffers = StiffVecU_gather.size ()/ numNodes;
-            for (std::size_t i = 0; i < numNodes; ++i)
-            {
-                StiffVecU_total[i] = 0;
-                for (std::size_t k = 0; k < num_buffers; ++k)
-                    StiffVecU_total[i] += StiffVecU_gather[k * numNodes + i];
-            }
-
-            //if ((j+1)%10 == 0)
-            //{
-                name = "matVecProdHBigger_" + s.str();
-                writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, StiffVecU_total, "StiffVecU");
-            //}
-        }
     }
 
-    if (optionWriteLoop) // create output files using WriteLoop option
+    if (optionWriteLoop) //create output files using WriteLoop
     {
         Vector array; array.resize(numNodes);
         for (int k = 0; k < numIt; ++k)
         {
-//            if ((k+1)%10 == 0)
-//            {
+            if ((k+1)%10 == 0)
+            {
                 stringstream s; s << k+1;
                 string distFileName = "testDist" + s.str() + ".txt";
                 WriteFStreamToArray(distFileName.c_str(), array, mtx);
-
-                cout << "-----------------------------Iterationstep(array):   " << k << "---------------------------------------" << endl;
-                // name = filename + s.str(); testMD2D_proc2_
-                // name = "testMD2D_proc2_" + s.str();
                 name = "test" + s.str();
                 writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, array, "resultU");
-            //}
+            }
         }
     }
 
@@ -386,23 +341,22 @@ template<typename BufferT, typename MeshT, typename DispatcherT>
 void computeIionUDerivWDeriv(const MeshT & mesh, DispatcherT & dispatcher, BufferT & f, BufferT & u_deriv, BufferT & w_deriv, BufferT & u,
                              BufferT & w, BufferT & lumpedM, BufferT & s, const float & sigma, const float & a, const float & b, const float & eps)
 {
-    //Buffer</*float*/double, Mesh, Dofs<1, 0, 0, 0>> s(mesh);
     AssembleMatrixVecProduct2D(mesh, u, dispatcher, s);
 
-    auto vertices {mesh.template GetEntityRange<0>()};
-    dispatcher.Execute(ForEachEntity(vertices,
+    auto nodes {mesh.template GetEntityRange<0>()};
+    dispatcher.Execute(ForEachEntity(nodes,
                                      tuple(ReadWrite(Node(f)),Write(Node(u_deriv)),Write(Node(w_deriv)),
                                          Read(Node(u)), Read(Node(w)), Read(Node(lumpedM)), ReadWrite(Node(s))),
-                                     [&](auto const& vertex, const auto& iter, auto& lvs)
+                                     [&](auto const& node, const auto& iter, auto& lvs)
     {
-        auto& f       = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        auto& u_deriv = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<1>(lvs));
-        auto& w_deriv = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<2>(lvs));
+        auto& f       = dof::GetDofs<dof::Name::Node>(std::get<0>(lvs));
+        auto& u_deriv = dof::GetDofs<dof::Name::Node>(std::get<1>(lvs));
+        auto& w_deriv = dof::GetDofs<dof::Name::Node>(std::get<2>(lvs));
 
-        auto& u       = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<3>(lvs));
-        auto& w       = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<4>(lvs));
-        auto& lumpedM = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<5>(lvs));
-        auto& s       = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<6>(lvs));
+        auto& u       = dof::GetDofs<dof::Name::Node>(std::get<3>(lvs));
+        auto& w       = dof::GetDofs<dof::Name::Node>(std::get<4>(lvs));
+        auto& lumpedM = dof::GetDofs<dof::Name::Node>(std::get<5>(lvs));
+        auto& s       = dof::GetDofs<dof::Name::Node>(std::get<6>(lvs));
 
         f[0]       = (u[0] * (1-u[0]) * (u[0]-a)) - w[0];
         u_deriv[0] = ((1/lumpedM[0]) * sigma * s[0]) + f[0];
