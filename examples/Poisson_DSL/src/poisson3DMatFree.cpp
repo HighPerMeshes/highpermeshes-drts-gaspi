@@ -17,8 +17,10 @@
  * Poisson equation      : $\sigma \Delta u = f$        $on \Omega$                *
  * with $\sigma$ as constant diffusion and $f = 1$                                 *
  * - adding $u$ as mass term leads to : $\sigma \Delta u + u                       *
+ *                                      \Righarrow (A+M)u = f                      *
+ *   with A as stiffness matrix and M as mass matrix / mass terms.                 *
  *                                                                                 *
- * last change: 14.12.2020                                                         *
+ * last change: 17.12.2020                                                         *
  * ------------------------------------------------------------------------------ **/
 
 #ifndef POISSON_CPP
