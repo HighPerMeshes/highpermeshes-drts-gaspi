@@ -88,7 +88,7 @@ void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, Buf
 
 template<typename BufferT, typename MeshT, typename DispatcherT>
 void computeIionUDerivWDeriv(const MeshT & mesh, DispatcherT & dispatcher, BufferT & f, BufferT & u_deriv, BufferT & w_deriv,
-                             /*const*/ BufferT & u, /*const*/ BufferT & w, /*const*/ BufferT & lumpedM, BufferT & s, const float & sigma,
+                             BufferT & u, BufferT & w, BufferT & lumpedM, BufferT & s, const float & sigma,
                              const float & a, const float & b, const float & eps);
 
 template<typename ArrayT, typename CharT>
@@ -98,9 +98,8 @@ void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx);
 int main(int argc, char** argv)
 {
     bool optionAllGather = true;
-    bool optionWriteLoop = false;
-    bool optionWriteOut  = false;
-    //bool optionMatrixVecProductTest = false;
+    bool optionWriteLoop = true; // if optionWriteLoop = true -> optionWriteOut = true!
+    bool optionWriteOut  = true;
 
     /*------------------------------------------(1) Set run-time system and read mesh information: ------------------------------------------------------------*/
     drts::Runtime<GetDistributedBuffer<>, UsingDistributedDevices> hpm({}, forward_as_tuple(argc, argv));
@@ -115,15 +114,15 @@ int main(int argc, char** argv)
     GetCurrentDir(buff, FILENAME_MAX);
     string currentWorkingDir(buff);
 
-    string foldername = "testOption2AsCandidate0";//"test3DOptFor2DCase";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
-    string filename   = "testOption2AsCandidate2_";//"test3DOptFor2DCase100x100SmallTau_";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
+    string foldername = "testProcessesWithMD2D";// "testOption2AsCandidate0";//"test3DOptFor2DCase";// "TestAllGather2_20x20Mesh_DistrCaseNuma2";
+    string filename   = "MD2D_2Processes";//"test3DOptFor2DCase100x100SmallTau_";//"TestAllGather2_20x20Mesh_DistrCaseNuma2_";
     //string parameterFilename = "testParameterfile";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
-    int numIt = 150;//500;//2;//200;//400;//1000;
+    int numIt = 100;//150;//500;//2;//200;//400;//1000;
     float h; float a; float b; float eps; float sigma; float u0L; float u0R; float w0L; float w0R;
     //auto file = CreateFile(currentWorkingDir, foldername, parameterFilename);
-    SetStartValues(2, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
+    SetStartValues(1, h, a, b, eps, sigma, u0L, u0R, w0L, w0R/*, file*/);
 
     int numNodes = mesh.template GetNumEntities<0>();
     int maxX = ceil(sqrt(numNodes)/4);
@@ -148,6 +147,7 @@ int main(int argc, char** argv)
     const auto u0_gather = AllGather<0>(u, static_cast<UsingGaspi&>(hpm));
     vector<float> u0_total(numNodes);
     GatherVec(u0_gather, u0_total, numNodes);
+
     stringstream s; s << 0;
     string name = filename + s.str();
     writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, u0_total, "resultU");
@@ -160,7 +160,7 @@ int main(int argc, char** argv)
         stringstream s; s << j+1;
 
         computeIionUDerivWDeriv(mesh, dispatcher, f, u_deriv, w_deriv, u, w, lumpedMat, StiffVecU, sigma, a, b, eps);
-        FWEuler(mesh, dispatcher, u, u_deriv, h, optionWriteOut=false, mtx, s);
+        FWEuler(mesh, dispatcher, u, u_deriv, h, optionWriteOut, mtx, s);
         FWEuler(mesh, dispatcher, w, w_deriv, h, false, mtx, s);
 
         if (optionAllGather) //create output files using AllGather
@@ -169,7 +169,7 @@ int main(int argc, char** argv)
             vector<float> u_total(numNodes);
             GatherVec(u_gather, u_total, numNodes);
 
-            if ((j+1)%10 == 0)
+            if ((j+1)%2 == 0)
             {
                 const size_t proc_id = hpm.gaspi_context.rank().get();
                 cout << "Process id: " << proc_id << endl;
@@ -185,12 +185,12 @@ int main(int argc, char** argv)
         Vector array; array.resize(numNodes);
         for (int k = 0; k < numIt; ++k)
         {
-            if ((k+1)%10 == 0)
+            if ((k+1)%2 == 0)
             {
                 stringstream s; s << k+1;
-                string distFileName = "testDist" + s.str() + ".txt";
+                string distFileName = "WriteLoop" + s.str() + ".txt";
                 WriteFStreamToArray(distFileName.c_str(), array, mtx);
-                name = "test" + s.str();
+                name = "MD2D_2Processes_WL_" + s.str();
                 writeVTKOutput2DTime(mesh, currentWorkingDir, foldername, name, array, "resultU");
             }
         }
@@ -228,7 +228,7 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
 }
 
 //!
-//! \brief Assemble rom-sum lumped mass matrix
+//! \brief Assemble row-sum lumped mass matrix
 //!
 template<typename MeshT, typename DispatcherT, typename BufferT>
 void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat)
@@ -250,6 +250,7 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, Buff
     }));
     return;
 }
+
 
 //!
 //! matrix-vector product split into single scalar operations
@@ -325,9 +326,11 @@ void FWEuler(const MeshT & mesh, DispatcherT & dispatcher, BufferT & vecOld, Buf
                                          tuple(Write(Node(vecOld)), Read(Node(vecDeriv))),
                                          [&](auto const& node, const auto& iter, auto& lvs)
         {
+            //int id      = node.GetTopology().GetIndex();
+            //vecOld[id] += h*vecDeriv[id];
             auto& vecOld   = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
             auto& vecDeriv = dof::GetDofs<dof::Name::Node>(get<1>(lvs));
-            vecOld[0]     += h*vecDeriv[0];
+            vecOld[0] += h*vecDeriv[0];
         }));
     }
 
@@ -349,18 +352,22 @@ void computeIionUDerivWDeriv(const MeshT & mesh, DispatcherT & dispatcher, Buffe
                                          Read(Node(u)), Read(Node(w)), Read(Node(lumpedM)), ReadWrite(Node(s))),
                                      [&](auto const& node, const auto& iter, auto& lvs)
     {
-        auto& f       = dof::GetDofs<dof::Name::Node>(std::get<0>(lvs));
-        auto& u_deriv = dof::GetDofs<dof::Name::Node>(std::get<1>(lvs));
-        auto& w_deriv = dof::GetDofs<dof::Name::Node>(std::get<2>(lvs));
+//        auto& f       = dof::GetDofs<dof::Name::Node>(std::get<0>(lvs));
+//        auto& u_deriv = dof::GetDofs<dof::Name::Node>(std::get<1>(lvs));
+//        auto& w_deriv = dof::GetDofs<dof::Name::Node>(std::get<2>(lvs));
 
-        auto& u       = dof::GetDofs<dof::Name::Node>(std::get<3>(lvs));
-        auto& w       = dof::GetDofs<dof::Name::Node>(std::get<4>(lvs));
-        auto& lumpedM = dof::GetDofs<dof::Name::Node>(std::get<5>(lvs));
-        auto& s       = dof::GetDofs<dof::Name::Node>(std::get<6>(lvs));
+//        auto& u       = dof::GetDofs<dof::Name::Node>(std::get<3>(lvs));
+//        auto& w       = dof::GetDofs<dof::Name::Node>(std::get<4>(lvs));
+//        auto& lumpedM = dof::GetDofs<dof::Name::Node>(std::get<5>(lvs));
+//        auto& s       = dof::GetDofs<dof::Name::Node>(std::get<6>(lvs));
 
-        f[0]       = (u[0] * (1-u[0]) * (u[0]-a)) - w[0];
-        u_deriv[0] = ((1/lumpedM[0]) * sigma * s[0]) + f[0];
-        w_deriv[0] = eps*(u[0]-(b*w[0]));
+//        f[0]       = (u[0] * (1-u[0]) * (u[0]-a)) - w[0];
+//        u_deriv[0] = ((1/lumpedM[0]) * sigma * s[0]) + f[0];
+//        w_deriv[0] = eps*(u[0]-(b*w[0]));
+        int id      = node.GetTopology().GetIndex();
+        f[id]       = (u[id] * (1-u[id]) * (u[id]-a)) - w[id];
+        u_deriv[id] = ((1/lumpedM[id]) * sigma * s[id]) + f[id];
+        w_deriv[id] = eps*(u[id]-b*w[id]);
 
     }));
     return;
@@ -388,7 +395,7 @@ auto CreateFile(string const & pathToFolder, string const & foldername, string c
 template<typename ArrayT, typename CharT>
 void WriteFStreamToArray(const CharT * filename, ArrayT & array, mutex & mtx)
 {
-    std::lock_guard guard { mtx };
+    std::lock_guard guard {mtx};
     FILE* f = fopen(filename,"r");
 
     if (f!=NULL)
