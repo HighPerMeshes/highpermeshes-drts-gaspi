@@ -243,38 +243,6 @@ void CreateStartVector(const MeshT & mesh, BufferT & startVec, const float & sta
     return;
 }
 
-//!
-//! \brief Assemble rom-sum lumped mass matrix
-//!
-//template<typename MeshT, typename DispatcherT, typename BufferT>
-//void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, BufferT & lumpedMat)
-//{
-//    auto cells {mesh.template GetEntityRange<dim>()};
-//    dispatcher.Execute(ForEachEntity(
-//                           cells,
-//                           tuple(ReadWrite(Node(lumpedMat))),
-//                           [&](auto const& cell, const auto& iter, auto& lvs)
-//    {
-//        auto& lumpedMat = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
-//        auto tmp        = cell.GetGeometry().GetJacobian();
-//        float detJ      = abs(tmp.Determinant());
-
-//        for (const auto& node1 : cell.GetTopology().template GetEntities<0>())
-//        {
-//            int id_node1 = node1.GetTopology().GetLocalIndex();
-//            for (const auto& node2 : cell.GetTopology().template GetEntities<0>())
-//            {
-//                if (node2.GetTopology().GetLocalIndex() == id_node1)
-//                    lumpedMat[id_node1][0] += detJ/60;// detJ * 1/12;
-//                else
-//                    lumpedMat[id_node1][0] += detJ/120;//detJ * 1/24;
-//            }
-//        }
-//    }));
-
-//    return;
-//}
-
 ////!
 ////! \brief Assemble row-sum lumped mass matrix
 ////!
@@ -298,56 +266,6 @@ void AssembleLumpedMassMatrix(const MeshT & mesh, DispatcherT & dispatcher, Buff
     }));
     return;
 }
-
-//!
-//! matrix-vector product split into single scalar operations
-//!
-//template<typename MeshT, typename VectorT, typename DispatcherT, typename BufferT>
-//void AssembleMatrixVecProduct3D(const MeshT & mesh, const VectorT & d, DispatcherT & dispatcher, BufferT & sBuffer)
-//{
-//    auto cells { mesh.template GetEntityRange<dim>() };
-//    dispatcher.Execute(ForEachEntity(
-//                           cells,
-//                           tuple(ReadWrite(Node(sBuffer))),
-//                           [&](auto const& cell, const auto& iter, auto& lvs)
-//    {
-//        constexpr int nrows = dim+1;
-//        constexpr int ncols = dim+1;
-//        const auto& gradients = GetGradientsDSL();
-//        const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
-
-//        const auto& tmp  = cell.GetGeometry().GetJacobian();
-//        const float detJ = abs(tmp.Determinant());
-
-//        const auto& inv   = tmp.Invert();
-//        const auto& invJT = inv.Transpose();
-
-//        // separate GATHER
-//        array<float, nrows> _d;
-//        for (int row = 0; row < nrows; ++row)
-//            _d[row] = d[nodeIdSet[row]];
-
-//        // accumulate into contiguous block of memory
-//        array<float, ncols> result{};
-
-//        float val      = detJ * 0.5;
-//        for (int col = 0; col < ncols; ++col)
-//        {
-//            const auto& gc = invJT * gradients[col];
-//            for (int row = 0; row < nrows; ++row)
-//            {
-//                const auto& gr = invJT * gradients[row];
-//                result[col]   += ((gc*gr) * val) * _d[row];
-//            }
-//        }
-
-//        // separate SCATTER (accumulate)
-//        for (int col = 0; col < ncols; ++col)
-//            sBuffer[nodeIdSet[col]] += result[col];
-//    }));
-
-//    return;
-//}
 
 //!
 //! matrix-vector product split into single scalar operations
