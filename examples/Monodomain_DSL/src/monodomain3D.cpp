@@ -18,7 +18,7 @@
  *                  u(0) = 1  on \Omega_1 and u(0) = 0  on \Omega_2,               *
  *                  w(0) = 0  on \Omega_1 and w(0) = 1  on \Omega_2.               *
  *                                                                                 *
- * last change: 31.08.2020                                                         *
+ * last change: 30.12.2020                                                         *
  * ------------------------------------------------------------------------------ **/
 
 #ifndef MONODOMAIN_CPP
@@ -32,7 +32,6 @@
 #include <HighPerMeshesDRTS.hpp>
 #include <../../highpermeshes-drts-gaspi/build/highpermeshes-dsl/include/HighPerMeshes.hpp>
 
-//#include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <../../highpermeshes-drts-gaspi/build/highpermeshes-dsl/include/HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshes/third_party/metis/Partitioner.hpp>
 #include <HighPerMeshes/auxiliary/BufferOperations.hpp>
@@ -280,7 +279,7 @@ void AssembleMatrixVecProduct3D(const MeshT & mesh, const VectorT & d, Dispatche
     {
         auto& sBuffer = dof::GetDofs<dof::Name::Node>(get<0>(lvs));
         constexpr int nrows = dim+1;
-        const auto& gradients = GetGradientsDSL();
+        const auto& gradients = GetGradients3DP1();
         const auto & cells = node.GetTopology().GetAllContainingCells();
 
         for (const auto& cell : cells)

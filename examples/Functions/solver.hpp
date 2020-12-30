@@ -6,10 +6,10 @@
  * Description:                                                                    *
  * Implementation of some simple solver.                                           *
  *                                                                                 *
- * last change: 17.03.2020                                                         *
+ * last change: 30.12.2020                                                         *
  * -----------------------------------------------------------------------------  **/
 
-#include </usr/include/c++/7/iostream>
+#include <iostream>
 #include <HighPerMeshes.hpp>
 
 
@@ -176,37 +176,3 @@ Matrix invertMatrix(const Matrix mat)
 
     return inv;
 }
-
-
-//!
-//! matrix-free conjugated gradient method 
-//!
-/*template<typename MeshT, typename BufferT, typename LoopbodyT, typename VecDslT>
-auto CGSolver(const MeshT & mesh, const BufferT & rhs, LoopbodyT bodyObj, VecDslT & x, const int & numSolverIt, const float & tol)->VecDslT
-{
-    int const size = 8;//x.size();
-    using VecDSL = HPM::dataType::Vec<float,size>;
-    float r_scPr = 0; float a = 0; float b = 0; float eps = tol - 0.00001;
-
-    VecDSL r; Convert(rhs,r); // r = residuum (with x = null vector as start vector: r = rhs-A*x = rhs-0 = rhs)
-    VecDSL d = r;             // d = (search) direction
-
-    for (int it = 0; it < numSolverIt; ++it)
-    {
-        HPM::Buffer<float, Mesh, Dofs<1, 0, 0, 0, 0>> sBuffer(mesh);
-        AssembleMatrixVecProduct(mesh, d, bodyObj, sBuffer);
-        VecDSL s; Convert(sBuffer, s);
-        r_scPr = r * r; // <r,r> scalar product
-        a      = r_scPr/(d*s);
-        x      = x + (a*d);
-        r      = r - (a*s);
-        b      = (r*r)/r_scPr; // here: r_scPr = <rOld,rOld>
-        d      = r + (b * d);
-
-        eps = std::sqrt(r * r);
-        if (eps < tol)
-            it = numSolverIt;
-    }
-
-    return x;
-}*/

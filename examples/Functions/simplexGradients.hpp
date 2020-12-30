@@ -6,16 +6,16 @@
  * Description:                                                                    *
  * Implementation of some simple functions.                                        *
  *                                                                                 *
- * last change: 21.11.19                                                           *
+ * last change: 30.12.20                                                           *
  * -----------------------------------------------------------------------------  **/
 
-#include </usr/include/c++/7/iostream>
+#include <iostream>
 #include <HighPerMeshes.hpp>
 
 //!
 //! \return gradients (p1-elements, dim = 3)
 //!
-auto GetGradientsDSL()
+auto GetGradients3DP1()
 {
     HPM::dataType::Matrix<float,4,3> gradientsDSL;
     gradientsDSL[0][0]= -1; gradientsDSL[0][1]= -1; gradientsDSL[0][2]= -1;

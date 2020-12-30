@@ -402,7 +402,7 @@ void SetGSM(const MeshT & mesh, BufferT & localMatrices, MatrixT & GSM, bool opt
     {
         const int nrows = dim+1; const int ncols = dim+1;
         auto& localMatrices   = HPM::dof::GetDofs<HPM::dof::Name::Node>(std::get<0>(lvs));
-        const auto& gradients = GetGradientsDSL();
+        const auto& gradients = GetGradients3DP1();
         const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
 
         auto tmp   = cell.GetGeometry().GetJacobian();
@@ -747,7 +747,7 @@ void GetMatrixVecProduct(const MeshT & mesh, const VectorT & dk, LoopbodyT bodyO
                   [&](auto const& cell, const auto& iter, auto& lvs)
     {
         const int nrows = dim+1; const int ncols = dim+1;
-        const auto& gradients = GetGradientsDSL();
+        const auto& gradients = GetGradients3DP1();
         const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
 
         auto tmp   = cell.GetGeometry().GetJacobian();
@@ -815,7 +815,7 @@ void GetRowOfStiffnessMatrix(const NodeT& node, const MeshT& mesh, const PairT &
         for (const auto& cell : containing_cells)
         {
             const int nrows = dim+1;
-            const auto& gradients = GetGradientsDSL();
+            const auto& gradients = GetGradients3DP1();
             const auto& nodeIdSet = cell.GetTopology().GetNodeIndices();
 
             // To-Do: find better syntax

@@ -156,7 +156,7 @@ void AssembleMatrixVecProduct(const MeshT & mesh, const VectorT & d, LoopbodyT b
                                   [&](auto const& node, const auto& iter, auto& lvs)
     {
         constexpr int nrows   = dim+1;
-        const auto& gradients = GetGradientsDSL();
+        const auto& gradients = GetGradients3DP1();
         auto& sBuffer         = dof::GetDofs<HPM::dof::Name::Node>(get<0>(lvs));
         const auto & cells    = node.GetTopology().GetAllContainingCells();
 
