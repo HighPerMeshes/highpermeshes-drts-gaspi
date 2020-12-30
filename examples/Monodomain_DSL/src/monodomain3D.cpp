@@ -108,7 +108,7 @@ int main(int argc, char** argv)
     string currentWorkingDir(buff);
 
     string foldername = "Test3D";
-    string filename   = "Test3D_ParameterSetting2ChangedLoops_";
+    string filename   = "Test3D_ParamSet2Distribute_";
 
     /*------------------------------------------(3) Set start values ------------------------------------------------------------------------------------------*/
     int numIt    = 500;
